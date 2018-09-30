@@ -1,0 +1,1174 @@
+#define CORE_DEBUG_LEVEL ARDUHAL_LOG_LEVEL_DEBUG
+
+#include <fs.h>
+#include <SPIFFS.h>
+#include <ArduinoJson.h>
+#include <DNSServer.h>
+#include <WiFiManager.h>         
+#include <tinyxml2.h>
+//#include "SSD1306.h"
+#include <U8g2lib.h>
+#include <Wire.h> 
+#include <LiquidCrystal_I2C.h>
+#include <DHT.h>
+#include <RtcDS3231.h>
+#include <ESP8266WebServer.h>
+#include <BME280I2C.h>
+#include <driver/adc.h>
+#include <AnalogPHMeter.h>
+//#include <AsyncTCP.h>
+//#include <Hash.h>
+//#include <ESPAsyncWebServer.h>
+
+
+#include "ESP8266TrueRandom.h"
+
+#include "orderparametermessage.h"
+#include "roomlabel.h"
+/*
+#define XML  "application/xml\r\n"
+#define JSON "application/json\r\n"
+#define PAGE "text/html\r\n"
+*/
+
+#define MYIP    "{{MyIp}}"
+#define TEXT    "{{Text}}"
+#define SUCCESS "{{Success}}"
+#define CODE    "{{Code}}"
+
+#define ADDRESS_LCD1   0x3F
+#define ADDRESS_LCD2   0x27
+
+#define ADDRESS_OLED   0x3C
+#define ADDRESS_BME280 0x76
+#define ADDRESS_RTC    0x68
+
+
+/*
+
+//esp8266
+#define DHTPIN 7
+#define TRIGGER_PIN  2
+#define SDA_PIN 6
+#define SCL_PIN 5
+*/
+
+//ESP32
+#define DHT_PIN       23
+#define TRIGGER_PIN   21
+#define SDA_PIN       19
+#define SCL_PIN       18
+
+#ifndef LED_BUILTIN
+  #define LED_BUILTIN 2
+#endif
+
+#define LCDMAXCHARS 20
+#define SENSORREADINTERVAL 5000
+
+using namespace tinyxml2;
+
+float temperature = 0;
+float humidity    = 0;
+float pressure    = 0;
+
+/*
+String Request="", Header="";
+*/
+RoomLabel roomLabel;
+
+
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C oled1(0);//U8X8_SSD1306_128X64_NONAME_SW_I2C(SCL, SDA, /* reset=*/ U8X8_PIN_NONE);
+//U8G2              * displayOled = 0;
+U8G2_SSD1306_128X64_NONAME_1_HW_I2C * displayOled = 0;
+
+LiquidCrystal_I2C * displayLcd  = 0;
+DHT                 dht;
+RtcDS3231<TwoWire>  rtc(Wire);
+BME280I2C           bme;    // Default : forced mode, standby time = 1000 ms
+                            // Oversampling = pressure ×1, temperature ×1, humidity ×1, filter off,
+
+bool rtcExists = false;
+bool bmeExists = false;
+bool dhtExists = false;
+bool pHExists  = false;
+
+
+//WiFiServer server(80);     // std
+//AsyncWebServer server(80); // async
+WebServer server(80); // experimental port
+
+byte uuidNumber[16]; // UUIDs in binary form are 16 bytes long
+
+const char PROGMEM configFileName[]  = "/config.json";
+const char PROGMEM messageFileName[] = "/message.json";
+const char PROGMEM pHCalibFileName[] = "/pHcalib.json";
+
+bool ledStatus = false;
+
+const char PROGMEM cStaticIp[16] = "192.168.178.254";
+const char PROGMEM cStaticGw[16] = "10.0.1.1";
+const char PROGMEM cStaticSn[16] = "255.255.255.0";
+
+String staticIp(cStaticIp);
+String staticGateway(cStaticGw);
+String staticSubnetMask(cStaticSn);
+/*
+static String PostStart = "POST ";
+static String GetStart="GET ";
+
+const char* PARAM_MESSAGE = "message";
+*/
+
+const char PROGMEM token[] = "{\"access_token\": \"tfrzhjuiopiuztrdfpokiuftgzhju70987654erfgh\", \"token_type\": \"bearer\", \"expires_in\": 86399}";
+
+const char PROGMEM transferResult[] = "<TransferResult xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
+                                "<HasError>false</HasError>"
+                                "<Success>"
+                                SUCCESS
+                                "</Success>"
+                                "<Error>"
+                                    "<Code>"
+                                    CODE
+                                    "</Code>"
+                                    "<Text>"
+                                    TEXT
+                                    "</Text>"
+                                "</Error>"
+                            "</TransferResult>";
+
+
+
+
+const char PROGMEM mainPage[]  = 
+         "<html><head><title>MSI embedded tech demo</title></head><body><h1>MSI embedded tech demo</h1>"
+         "<p><h2>Message description</h2><a href=\"/GetMessageDescriptionRoomLabel\">http://"
+         MYIP
+         "/GetMessageDescriptionRoomLabel</a></p>"
+         "<p><h2>Adapter config</h2></p>"
+         "<p><h3>Get secure token</h3><a href=\"/getsecuretoken\">http://"
+         MYIP
+         "/getsecuretoken</a></p>"
+         "<p><h3>Get next message</h3><a href=\"/GetNextMessage\">http://"
+         MYIP
+         "/GetNextMessage</a></p>"
+         "<p><h3>Post message</h3><a href=\"/PostMessage\">http://"
+         MYIP
+         "/PostMessage</a></p>"
+         "</body></html>";
+
+
+
+#define countof(a) (sizeof(a) / sizeof(a[0]))
+String getDateTimeString(const RtcDateTime& dt)
+{
+    char datestring[20];
+
+    snprintf_P(datestring, 
+            countof(datestring),
+            PSTR("%04u-%02u-%02u %02u:%02u:%02u"),
+            dt.Year(),
+            dt.Month(),
+            dt.Day(),
+            dt.Hour(),
+            dt.Minute(),
+            dt.Second() );
+    //Serial.print(datestring);
+    return (String(datestring));
+}
+
+String getNow()
+{
+  RtcDateTime now;
+  if (rtcExists)
+  {
+     now = rtc.GetDateTime();
+  }
+  
+  return getDateTimeString(now);  
+}
+
+bool readSensor()
+{
+  float temp(NAN), hum(NAN), pres(NAN);
+  
+  if (dhtExists)
+  {
+    temp = dht.getTemperature();
+    hum  = dht.getHumidity();
+    Serial.print("dht:");
+    Serial.print(dht.getStatusString());
+    
+  }
+  else if (bmeExists)
+  {
+      BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
+      BME280::PresUnit presUnit(BME280::PresUnit_Pa);
+    
+      bme.read(pres, temp, hum, tempUnit, presUnit);
+  }
+  else
+  {
+    return -1;
+  }
+
+  if (!isnan(temp) && !isnan(hum))
+  {
+    temperature = temp;
+    humidity    = hum;
+  }
+  if (!isnan(pres))
+  {
+    pressure = pres;
+  }
+  return 0;
+}
+
+float getpH()
+{
+  float pH = (float)adc1_get_raw(ADC1_CHANNEL_0) * 14.0 / 4095.0;
+  Serial.print("pH:");
+  Serial.println(pH);
+
+  return pH;
+}
+
+
+String getMainPage()
+{
+    String msgd = mainPage;
+    msgd.replace(MYIP, WiFi.localIP().toString());
+    return msgd;
+}
+
+String getTransferResultText(bool Ok, const char * errorText)
+{
+  String result = transferResult;
+  result.replace(CODE, Ok?"0":"-1");
+  result.replace(TEXT, errorText);
+  result.replace(SUCCESS, Ok?"true":"false");
+  return result;
+}
+
+void toggleLED()
+{
+  ledStatus = ! ledStatus;
+  digitalWrite(LED_BUILTIN, ledStatus);
+}
+
+void notFound()
+{
+
+  String message = "File Not Found\n\n";
+  message += "URI: ";
+  message += server.uri();
+  message += "\nMethod: ";
+  message += (server.method() == HTTP_GET)?"GET":"POST";
+  message += "\nArguments: ";
+  message += server.args();
+  message += "\n";
+  for (int i=0; i<server.args(); i++)
+  {
+    message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+  }
+  server.send(404, "text/plain", message);
+}
+
+bool readConfigFile() 
+{
+  File f = SPIFFS.open(configFileName, "r");
+  
+  if (!f) 
+  {
+    Serial.println("Configuration file not found");
+    return false;
+  } 
+  else 
+  {
+    size_t size = f.size();
+    // Allocate a buffer to store contents of the file.
+    std::unique_ptr<char[]> buf(new char[size]);
+
+    f.readBytes(buf.get(), size);
+    f.close();
+    DynamicJsonBuffer jsonBuffer;
+    JsonObject& json = jsonBuffer.parseObject(buf.get());
+    if (!json.success()) 
+    {
+      Serial.println("JSON parseObject() failed");
+      return false;
+    }
+    json.printTo(Serial);
+
+    if (json.containsKey("ip")) 
+    {
+      staticIp = (const char*)json["ip"];      
+    }
+    if (json.containsKey("gw")) 
+    {
+      staticGateway = (const char*)json["gw"];      
+    }
+    if (json.containsKey("sn")) 
+    {
+      staticSubnetMask = (const char*)json["sn"];      
+    }
+    
+  }
+  Serial.println("\nConfig file was successfully parsed");
+  
+  return true;
+}
+
+bool writeConfigFile() 
+{
+   
+  Serial.println("Saving config file");
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& json = jsonBuffer.createObject();
+
+  // JSONify local configuration parameters
+  json["ip"] = staticIp.c_str();
+  json["gw"] = staticGateway.c_str();
+  json["sn"] = staticSubnetMask.c_str();
+  
+  File f = SPIFFS.open(configFileName, "w");
+  if (!f) 
+  {
+    Serial.println("Failed to open config file for writing");
+    return false;
+  }
+
+  json.prettyPrintTo(Serial);
+  json.printTo(f);
+  f.close();
+
+  Serial.println("\nConfig file was successfully saved");
+  
+  return true;
+}
+
+bool existsI2c(byte address)
+{
+  byte error;
+  // The i2c_scanner uses the return value of
+  // the Write.endTransmisstion to see if
+  // a device did acknowledge to the address.
+
+  Wire.beginTransmission(address);
+  error = Wire.endTransmission();
+  if (error == 0)
+  {
+    return true;
+  }
+  else if (error==4)
+  { 
+    Serial.print("Unknow error at address 0x");
+    if (address<16)
+      Serial.print("0");
+    Serial.println(address,HEX);
+    return false;
+  }
+
+  return false;
+}
+
+void scanI2c()
+{
+  byte  address;
+  int nDevices;
+  Serial.println("Scanning...");
+  nDevices = 0;
+  for(address = 1; address < 127; address++ )
+  {
+    if (existsI2c(address))
+    {
+      Serial.print("I2C device found at address 0x");
+      if (address<16)
+        Serial.print("0");
+      Serial.print(address,HEX);
+      Serial.println(" !");
+      nDevices++;
+    }
+
+  }
+}
+
+static void displayOledScreen(String WifiStatus, bool IsAP )
+{
+  if (displayOled)
+  {
+    
+    if (displayLcd)
+    {
+    // if there is a LCD, the oled is for information only,.
+    // so we show all sorts of gereral information
+      displayOled->clear();
+      String rssi(WiFi.RSSI());
+
+/*
+      u8x8.setFont(u8x8_font_chroma48medium8_r);
+      u8x8.drawString(0,0,"Hello World!");
+      u8x8.refreshDisplay();		// only required for SSD1606/7 
+*/
+      
+      displayOled->setFont(u8g2_font_10x20_me);
+      displayOled->drawStr( 00, 00, WifiStatus.c_str());  
+
+      displayOled->drawStr( 00, 10, "ID:");  
+      displayOled->drawStr( 20, 10, WiFi.macAddress().c_str());  
+
+      displayOled->drawStr( 00, 20, "MyIP:");
+      displayOled->drawStr( 00, 30, "SSID:");  
+
+      if(!IsAP)
+      {  
+        displayOled->drawStr( 30, 20, WiFi.localIP().toString().c_str());
+        displayOled->drawStr( 30, 30, WiFi.SSID().c_str());  
+      } 
+      else 
+      {
+        displayOled->drawStr( 30, 20, "192.168.4.1");
+        displayOled->drawStr( 30, 30, "WerumMsiAP");  
+      }
+
+      if (bmeExists || dhtExists)
+      {
+        displayOled->drawStr( 0, 40, "Temp");
+        displayOled->drawStr( 30, 40, String(temperature).c_str());
+        displayOled->drawStr( 64, 40, "Hum");  
+        displayOled->drawStr( 90, 40, String(humidity).c_str());  
+      }
+      else
+      {
+        int val = adc1_get_raw(ADC1_CHANNEL_0);
+        displayOled->drawStr( 0, 40, String(val).c_str());
+      }
+
+      displayOled->drawStr(  0, 50, getNow().c_str());  
+
+      displayOled->display();
+    }
+    else if (bmeExists || dhtExists)
+    {
+      displayOled->clear();
+
+      displayOled->setFont(u8x8_font_chroma48medium8_r);
+      displayOled->drawStr(  0, 00, "T:");
+      displayOled->drawStr( 30, 00, String(temperature).c_str());
+      displayOled->drawStr(  0, 40, "H:");  
+      displayOled->drawStr( 30, 40, String(humidity).c_str());  
+
+      displayOled->display();
+    }
+    else if (pHExists)
+    {
+      displayOled->clear();
+
+      displayOled->setFont(u8x8_font_chroma48medium8_r);
+      displayOled->drawStr( 00, 00, "IP:");  
+      displayOled->drawStr( 20, 00, WiFi.localIP().toString().c_str());  
+
+      displayOled->setFont(u8x8_font_chroma48medium8_r);
+      displayOled->drawStr(  0, 10, "pH:");
+      displayOled->drawStr( 40, 10, String(getpH(),1).c_str());
+
+      displayOled->display();
+    }
+  }
+}
+
+
+
+String makeLCDLine(const char * v, const char* label)
+{
+  String line;
+  line = String(String(label) + v).substring(0,LCDMAXCHARS);
+  while (line.length()<LCDMAXCHARS)
+  {
+    line += " ";
+  }
+  return line;
+}
+
+String makeLCDLine(msiparameter* p, const char* label)
+{
+  String line;
+  if (p)
+  {
+    line = makeLCDLine(p->value.c_str(), label);
+  }
+  else
+  {
+    line = makeLCDLine("---", label);
+  }
+  return line;
+}
+
+void displayLcdScreen()
+{
+  if (displayLcd)
+  {
+    String lineMat     = makeLCDLine(roomLabel.getParameter("Mat"),     "Mat: ");
+    String lineBatchId = makeLCDLine(roomLabel.getParameter("BatchID"), "Batch: ");
+    String lineSFO     = makeLCDLine(roomLabel.getParameter("SFO"),     "SFO: ");
+    String lineTime    = makeLCDLine(roomLabel.creationTimeString.c_str(),     "");
+
+    displayLcd->setCursor(0,0);
+    displayLcd->print(lineMat);
+    displayLcd->setCursor(0,1);
+    displayLcd->print(lineBatchId);
+    displayLcd->setCursor(0,2);
+    displayLcd->print(lineSFO);
+    displayLcd->setCursor(0,3);
+    if (roomLabel.creationTimeString.length())
+    {
+      displayLcd->print(lineTime);
+    }
+    else
+    {
+      if (bmeExists || dhtExists)
+      {
+        String env = String(temperature,1) + "C "+String(humidity,1) + "% ";
+        if (bmeExists)
+        {
+          env += String(pressure,0)+"pa";
+        }
+      
+        while (env.length()<LCDMAXCHARS)
+        {
+          env+=" ";
+        }
+        displayLcd->print(env);
+      }
+      else
+      {
+        displayLcd->print(lineTime); // erase line
+      }
+    }
+  /*    
+    DisplayLcd.print(getDateTimeString(getNow()));
+  */  
+  }
+}
+
+
+
+
+void wifiManagerConfigModeCallback (WiFiManager *myWiFiManager) 
+{
+  displayOledScreen("Access Point started", true);
+
+}
+
+void wifiManagerSaveConfigCallback () 
+{
+  Serial.println("wifiManagerSaveConfigCallback");
+  staticIp = WiFi.localIP().toString();
+  staticGateway = WiFi.gatewayIP().toString();
+  staticSubnetMask = WiFi.subnetMask().toString();
+  writeConfigFile();
+}
+
+void wifiStart()
+  {
+    WiFiManager WifiManager;
+    WifiManager.setAPCallback(wifiManagerConfigModeCallback);
+    WifiManager.setSaveConfigCallback(wifiManagerSaveConfigCallback);
+
+    if (digitalRead(TRIGGER_PIN) == LOW)
+    {
+      WifiManager.resetSettings();
+      Serial.println("Manual wifi data reset");
+    }  
+    
+    //set static ip
+  /*
+    IPAddress _ip,_gw,_sn;
+    _ip.fromString(staticIp);
+    _gw.fromString(staticGateway);
+    _sn.fromString(staticSubnetMask); 
+    WifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
+   */
+/*
+    String hostName = String(F("MSI")) + String((unsigned long)ESP.getEfuseMac()); 
+    WiFi.setHostname(hostName.c_str());
+*/
+    // generate the Access Point 
+    WifiManager.autoConnect("WerumMsiAP");
+
+    Serial.print("MyIP:");
+    Serial.println(WiFi.localIP().toString());
+    Serial.print("MyMac:");
+    Serial.println(WiFi.macAddress());
+    
+
+  }
+
+bool getValuesFromMsi(const String& content, String & errorMessage)
+{   
+  bool success = false;
+  
+  XMLDocument doc;
+  if (doc.Parse(content.c_str()))
+  {
+    Serial.println(doc.ErrorStr());
+    errorMessage = doc.ErrorStr();
+    success = false;
+  }
+  else
+  {
+    
+    //Save XML for next start
+    File f = SPIFFS.open(messageFileName, "w");
+    if (!f) 
+    {
+      Serial.println("Failed to open message file for writing");
+    }
+    else
+    {
+      f.print(content.c_str());
+      f.close();
+    }
+
+
+    const char* messageType = 0;
+    const XMLElement * e; 
+    
+    e = doc.FirstChildElement( "MsiMessageContainer" );
+    if (e)
+    {
+      e = e->FirstChildElement( "messageType" );
+    }
+    if (e)
+    {
+      messageType = e->GetText();
+    }
+
+    const XMLElement * message=0; 
+    if (e)
+    {
+      message = doc.FirstChildElement( "MsiMessageContainer" )->FirstChildElement("message");
+    }
+
+    if (!strcmp(messageType,"MsiOrderParameterMessage"))
+    {
+      if (message)
+      {
+        message = message->FirstChildElement( "MsiOrderParameterMessage" );
+      }
+
+      if (message)
+      {
+        e = message->FirstChildElement( "messageId" );
+      }
+      if (e)
+      {
+        OrderParameterMessage opMessage;
+        opMessage.messageId = e->GetText();
+        if (message)
+        {
+          e = message->FirstChildElement( "deviceTypeId" );
+        }
+        if (e)
+        {
+          opMessage.deviceTypeId = e->GetText();
+        }
+
+        if (message)
+        {
+          e = message->FirstChildElement( "supplierId" );
+        }
+        if (e)
+        {
+          opMessage.supplierId = e->GetText();
+        }
+
+        if (message)
+        {
+          e = message->FirstChildElement( "supplierVersion" );
+        }
+        if (e)
+        {
+          opMessage.supplierVersion = e->GetText();
+        }
+
+        if (message)
+        {
+          e = message->FirstChildElement( "creationTime" );
+        }
+        if (e)
+        {
+          opMessage.creationTimeString = e->GetText();
+        }
+
+        if (opMessage.messageId.equals("SetRoomLabel"))
+        {
+          roomLabel = RoomLabel(opMessage);
+          const XMLElement * parameter=0; 
+          parameter = message->FirstChildElement( "parameter" );
+          while (parameter)
+          {
+            e = parameter->FirstChildElement( "name" );
+            if (e)
+            {
+              msiparameter * p = roomLabel.addParameter();
+              if (p)
+              {
+                p->name  = e->GetText();
+                e = parameter->FirstChildElement( "dataType" );
+                if (e)
+                {
+                  p->dataType  = e->GetText();
+                }
+                e = parameter->FirstChildElement( "value" );
+                if (e)
+                {
+                  p->value  = e->GetText();
+                }
+                e = parameter->FirstChildElement( "isQualifier" );
+                if (e)
+                {
+                  p->isQualifier = !strcmp(e->GetText(),"true");
+                }
+                e = parameter->FirstChildElement( "acquisitionTime" );
+                if (e)
+                {
+                  p->acquisitionTimeString = e->GetText();
+                }
+              }
+              else
+              {
+                // too many parameter
+              }
+            }
+            else
+            {
+              //parameter has no name !?
+            }
+            parameter = parameter->NextSiblingElement( "parameter" );
+          }
+          success = roomLabel.isOk();
+          if (!success)
+          {
+            errorMessage= F("Message check failed, potentially incomplete data?");
+            Serial.println("XML Content: ");
+            Serial.print(content);
+            Serial.println("*");
+            Serial.println("###########################################");
+            roomLabel.logToSerial(Serial);
+          }
+          else
+          {
+            roomLabel.setHasMessageToSend(true);
+          }
+          Serial.print("success=");
+          Serial.println(success);
+        }
+        else
+        {
+          errorMessage = String(F("No message handler for MessageID ")) + opMessage.messageId;
+        }
+      }
+
+    }
+    else
+    {
+      errorMessage = F("Not an MsiOrderParameterMessage");
+    }
+  }
+/*
+<?xml version="1.0"?>
+<MsiMessageContainer xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <messageInstanceId>3afdf762-05d6-47ed-8369-f62fb623adf1</messageInstanceId>
+  <direction>MES_TO_SF</direction>
+  <systemId>11111</systemId>
+  <messageType>MsiOrderParameterMessage</messageType>
+  <messageContext>5000203853</messageContext>
+  <message>
+    <MsiOrderParameterMessage>
+      <messageInstanceId>0fa8a6e8-7934-489f-a5d3-d87c9a6f4de8</messageInstanceId>
+      <direction>MES_TO_SF</direction>
+      <messageId>SetRoomLabel</messageId>
+      <supplierId>Werum</supplierId>
+      <deviceTypeId>ESP_Roomlabel</deviceTypeId>
+      <supplierVersion>1.0</supplierVersion>
+      <orderContext>5000203853</orderContext>
+      <creationTime>2018-08-15 15:02:09,205</creationTime>
+      <parameter>
+        <name>Mat</name>
+        <dataType>String</dataType>
+        <value>HS125</value>
+        <isQualifier>false</isQualifier>
+        <acquisitionTime>2018-08-15 15:02:08,487</acquisitionTime>
+      </parameter>
+      <parameter>
+        <name>SFO</name>
+        <dataType>String</dataType>
+        <value>19735</value>
+        <isQualifier>false</isQualifier>
+        <acquisitionTime>2018-08-15 15:02:09,033</acquisitionTime>
+      </parameter>
+      <parameter>
+        <name>BatchID</name>
+        <dataType>String</dataType>
+        <value>VT001061</value>
+        <isQualifier>true</isQualifier>
+        <acquisitionTime>2018-08-15 15:02:09,174</acquisitionTime>
+      </parameter>
+      <attachment />
+    </MsiOrderParameterMessage>
+  </message>
+</MsiMessageContainer>
+*/
+
+  return success;
+}
+
+void readXmlFromFS()
+{
+  File f = SPIFFS.open(messageFileName, "r");
+  if (!f) 
+  {
+    Serial.println("Messagefile not found");
+    return;
+  } 
+  else 
+  {
+    // we could open the file
+    size_t size = f.size();
+    // Allocate a buffer to store contents of the file.
+    std::unique_ptr<char[]> buf(new char[size+1]);
+
+    // Read and store file contents in buf
+    f.readBytes(buf.get(), size);
+    buf[size]=0; //terminating zero
+    // Closing file
+    f.close();
+    //Serial.println(buf.get());
+    Serial.println("Messagefile successfully read.");
+    String errorText;
+    getValuesFromMsi(String(buf.get()), errorText);
+    roomLabel.setHasMessageToSend(false); // do not fire a repsonse
+  }
+  
+}
+void serverStart()
+{
+  server.on("/", HTTP_GET, [](){
+    Serial.println("MainPage");
+      server.send(200, "text/html", getMainPage());
+      
+  });
+
+  server.on("/getsecuretoken", HTTP_POST, [](){
+      Serial.println("getsecuretoken");
+      server.send(200, "text/JSON", token);
+  });
+
+  server.on("/GetMessageDescriptionRoomLabel", HTTP_GET, [](){
+    Serial.println("GetMessageDescriptionRoomLabel");
+    server.send(200, "text/xml", roomLabel.getMessageDescription());
+      
+  });
+
+  server.on("/GetNextMessage", HTTP_GET, [](){
+    Serial.print("GetNextMessage.");
+    String response;
+    toggleLED();
+    if (roomLabel.hasMessageToSend())
+    {
+      Serial.println(getNow());
+      byte uuidNumber[36];
+      ESP8266TrueRandom.uuid(uuidNumber);
+      String uuidStr = ESP8266TrueRandom.uuidToString(uuidNumber);
+      ESP8266TrueRandom.uuid(uuidNumber);
+      String uuidStr2 = ESP8266TrueRandom.uuidToString(uuidNumber);
+
+      response = roomLabel.getNextMessageString(uuidStr.c_str(), 
+                                      uuidStr2.c_str(), 
+                                      roomLabel.creationTimeString.c_str(), 
+                                      temperature, 
+                                      humidity); 
+      
+      roomLabel.setHasMessageToSend(false);
+      Serial.print(getNow());
+    }
+    else 
+    {
+      response = "<NoMessage/>";
+    }
+    server.send(200, "text/plain", response);
+    Serial.println(".");
+
+  });
+
+  server.on("/PostMessage", HTTP_POST, [] () {
+    Serial.print("PostMessage");
+    Serial.println(getNow());
+    String errorString;
+    bool Ok= false;
+    if (server.args())
+    {
+      String xml = server.arg(0);
+      int xmlStart = xml.indexOf('<');
+      int xmlEnd   = xml.lastIndexOf('>');
+    
+      if (xmlEnd>=0 && xmlStart>=0)
+      {
+        xmlEnd++; //including the >
+        xml = xml.substring(xmlStart, xmlEnd);
+        if (xml.length()>0)
+        {
+          Ok = getValuesFromMsi(xml, errorString);
+        }
+      }
+    }
+
+    if (Ok)
+    {
+      displayLcdScreen();
+      
+      server.send(200, "text/plain", getTransferResultText(Ok, errorString.c_str()));
+      Serial.println(".OK");
+    }
+    else
+    {
+      server.send(200, "text/plain", getTransferResultText(Ok, errorString.c_str()));
+      Serial.println(".fail");
+    }
+    Serial.print(getNow());
+    Serial.println(".");
+  });
+
+  server.onNotFound(notFound);
+  server.begin();
+}
+
+void oledStart()
+{
+
+  if (existsI2c(ADDRESS_OLED) && !displayOled)
+  {
+    Serial.println("Found oled1");
+    displayOled = &oled1;
+
+    Serial.println("Found oled2");
+    displayOled ->getWriteError();
+    //displayOled = new SSD1306(ADDRESS_OLED, SDA_PIN, SCL_PIN);       
+    Serial.println("Found oled3");
+  }
+
+  if (displayOled)
+  {
+    displayOled->setI2CAddress(ADDRESS_OLED);
+    displayOled->begin();
+    displayOled->clear();
+    displayOled->setFlipMode(1);
+  }
+}
+
+void lcdStart()
+{
+  if (!displayLcd)
+  {
+    if (existsI2c(ADDRESS_LCD1))
+    {
+      Serial.println("Found LCD 1");
+      displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD1,LCDMAXCHARS,4);
+    }
+    else if (existsI2c(ADDRESS_LCD2))
+    {
+      Serial.println("Found LCD 2");
+      displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD2,LCDMAXCHARS,4);
+    }
+  }
+
+  if (displayLcd)
+  {
+    displayLcd->init();
+    displayLcd->backlight();
+    displayLcdScreen();
+  }
+}
+
+void RTCStart() 
+{
+  if (existsI2c(ADDRESS_RTC))
+  {
+    rtcExists = true;
+    Serial.println("found RTC");
+    rtc.Begin();
+    RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+    if (!rtc.IsDateTimeValid()) 
+    {
+        // Common Cuases:
+        //    1) first time you ran and the device wasn't running yet
+        //    2) the battery on the device is low or even missing
+
+        Serial.println("RTC lost confidence in the DateTime!");
+
+        // following line sets the RTC to the date & time this sketch was compiled
+        // it will also reset the valid flag internally unless the Rtc device is
+        // having an issue
+
+        rtc.SetDateTime(compiled);
+    }
+
+    if (!rtc.GetIsRunning())
+    {
+        Serial.println("RTC was not actively running, starting now");
+        rtc.SetIsRunning(true);
+    }
+
+    RtcDateTime now = rtc.GetDateTime();
+    if (now < compiled) 
+    {
+        Serial.println("RTC is older than compile time!  (Updating DateTime)");
+        rtc.SetDateTime(compiled);
+    }
+    else if (now > compiled) 
+    {
+        Serial.println("RTC is newer than compile time. (this is expected)");
+        Serial.println(getDateTimeString(now));
+    }
+    else if (now == compiled) 
+    {
+        Serial.println("RTC is the same as compile time! (not expected but all is fine)");
+    }
+
+    // never assume the Rtc was last configured by you, so
+    // just clear them to your needed state
+    rtc.Enable32kHzPin(false);
+    rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone); 
+  }
+}
+
+void dhtStart()
+{
+  dht.setup(DHT_PIN);
+  if (dht.getStatus() == dht.ERROR_NONE)
+  {
+    dhtExists = true;
+  }
+  Serial.print("dht:");
+  Serial.println(dht.getStatusString());
+}
+
+void bmeStart()
+{
+  unsigned long waitUntil = millis()+1000;
+  while(!bme.begin() && millis()<waitUntil)
+  {
+    delay(200);
+  }
+
+  switch(bme.chipModel())
+  {
+     case BME280::ChipModel_BME280:
+       Serial.println("Found BME280 sensor!");
+       bmeExists= true;
+       break;
+     case BME280::ChipModel_BMP280:
+       Serial.println("Found BM_P_280 sensor!");
+       break;
+     default:
+       Serial.println("Found UNKNOWN sensor! Error!");
+  }
+}
+
+void pHStart()
+{
+  adc1_config_width(ADC_WIDTH_12Bit);
+  adc1_config_channel_atten(ADC1_CHANNEL_0,ADC_ATTEN_11db); 
+  
+  if (adc1_get_raw(ADC1_CHANNEL_0)!=0)
+  {
+    pHExists = true;
+    Serial.println("Found pH");
+  }
+
+}
+
+
+
+unsigned long startMillis;
+void setup() 
+{
+  startMillis = millis();
+
+  Serial.begin(115200);
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN, HIGH);
+
+  pinMode(TRIGGER_PIN, INPUT_PULLUP);           // set pin to input
+      
+     
+  Wire.begin(SDA_PIN,SCL_PIN);
+  Serial.println("-- scanI2c --");
+  scanI2c();
+
+  RTCStart();
+  dhtStart();
+  bmeStart();
+  pHStart();
+
+  readSensor();
+
+  oledStart();
+  lcdStart();
+
+    // Mount the filesystem
+  bool result = SPIFFS.begin();
+  Serial.println("SPIFFS opened: " + result);
+
+  if (!readConfigFile()) 
+  {
+    Serial.println("Failed to read configuration file, using default values");
+  }
+
+  readXmlFromFS();
+
+  displayOledScreen("Connecting...", false);
+  wifiStart();
+
+  Serial.println("Connected!");
+  digitalWrite(LED_BUILTIN, LOW);
+  serverStart();
+  Serial.println("Server Started.");
+
+  displayOledScreen("Connected!", false);
+  
+}
+
+
+unsigned long nextSensorRead=SENSORREADINTERVAL;
+void loop() 
+  {
+    heap_caps_check_integrity_all(true);
+    
+    if (millis() > nextSensorRead)
+    {
+      if (readSensor() == 0)
+      {
+        nextSensorRead = millis() + SENSORREADINTERVAL;
+        displayLcdScreen();
+      }
+      else
+      {
+        // no sensor? Try again faster.
+        nextSensorRead = millis() + SENSORREADINTERVAL/10;
+      }
+
+      Serial.print(".");
+      displayOledScreen(WiFi.isConnected()?"Connected":"Not Connected",false);
+    }
+     
+    // Check if WLAN is connected
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      wifiStart();
+    }
+
+    server.handleClient();
+  }
+
