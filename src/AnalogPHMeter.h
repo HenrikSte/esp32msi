@@ -57,7 +57,9 @@ class PHCalibrationValue
         JsonObject& json = jsonBuffer.parseObject(buf.get());
         if (!json.success()) 
         {
-          Serial.println("JSON parseObject() failed");
+          Serial.print("JSON parseObject() failed:");
+          Serial.println(pHFileName);
+
           return false;
         }
         json.prettyPrintTo(Serial);

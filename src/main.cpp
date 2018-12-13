@@ -1,4 +1,6 @@
-#define CORE_DEBUG_LEVEL ARDUHAL_LOG_LEVEL_DEBUG
+//#define CORE_DEBUG_LEVEL ARDUHAL_LOG_LEVEL_DEBUG
+//#define DEBUG_ESP_HTTP_SERVER
+
 
 #include <fs.h>
 #include <SPIFFS.h>
@@ -12,7 +14,7 @@
 #include <LiquidCrystal_I2C.h>
 #include <DHT.h>
 #include <RtcDS3231.h>
-#include <ESP8266WebServer.h>
+//#include <ESP8266WebServer.h>
 #include <BME280I2C.h>
 #include <driver/adc.h>
 //#include <AsyncTCP.h>
@@ -73,8 +75,12 @@
 #endif
 
 #define LCDMAXCHARS 20
-#define SENSORREADINTERVAL   5000
-#define DISPLAYUPDATEINTERVAL 200
+#define SENSORREADINTERVAL     5000
+#define WATCHDOGTIME         120000 
+#define DISPLAYUPDATEINTERVAL   200
+#define MIN_FREE_SPIFFS      100000
+#define LOGBUFFERSIZE         10000
+#define MAXLOGFILESIZE       300000
 
 using namespace tinyxml2;
 
@@ -115,6 +121,12 @@ RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
 
 bool setupComplete = false;
 
+unsigned long lastPasXInteraction = 0;
+unsigned long pasXWatchDogTime    = WATCHDOGTIME;
+
+String logString;
+bool logActive = false;
+
 //WiFiServer server(80);     // std
 //AsyncWebServer server(80); // async
 WebServer server(80); 
@@ -122,6 +134,7 @@ WebServer server(80);
 //byte uuidNumber[16]; // UUIDs in binary form are 16 bytes long
 
 const char PROGMEM configFileName[]  = "/config.json";
+const char PROGMEM logFileName[]     = "/log.txt";
 
 const char PROGMEM receivedMessageFileName[] = "/receivedmessage.xml";
 const char PROGMEM sentMessageFileName[] = "/sentmessage.xml";
@@ -196,6 +209,12 @@ const char PROGMEM mainPage[]  =
          "<p><h2>Debug</h2></p>"
          "<p><a href=\"/lastsentmessage\">Last sent message</a></p>"
          "<p><a href=\"/lastreceivedmessage\">Last received message</a></p>"
+         "<p><a href=\"/log\">logfile</a></p>"
+         "<p><a href=\"/resetlog\">reset log file</a></p>"
+         "<p><a href=\"/activatelog\">activate log</a></p>"
+         "<p><a href=\"/deactivatelog\">deactivate log</a></p>"
+         "<p><a href=\"/watchdog\">activate watchdog</a></p>"
+         "<p><a href=\"/nowatchdog\">deactivate watchdog</a></p>"
          "<p><h2>Device Info</h2>"
          DEVICEINFO
          "</body></html>"
@@ -219,6 +238,73 @@ String getDateTimeString(const RtcDateTime& dt)
             dt.Second() );
     //Serial.print(datestring);
     return (String(datestring));
+}
+
+void mylog(const char * text, bool forceWrite = false)
+{
+  logString += text;
+
+  if (logActive)
+  {
+    if (forceWrite || (logString.length() > LOGBUFFERSIZE))
+    {
+      if (SPIFFS.totalBytes()-SPIFFS.usedBytes() > MIN_FREE_SPIFFS)
+      {
+        File f = SPIFFS.open(logFileName, "a");
+        if (!f) 
+        {
+          Serial.println("Failed to open log file for writing");
+        }
+        else
+        {
+          if (f.size()<MAXLOGFILESIZE)
+          {
+            f.print(logString.c_str());
+            f.close();
+          }
+        }
+      }
+      else
+      {
+        Serial.println("SPIFFS full!");
+      }
+      logString="";
+    }  
+  }
+  else
+  {
+    // check for string overflow
+    if (logString.length() > LOGBUFFERSIZE)
+    {
+      logString = logString.substring(logString.length()-LOGBUFFERSIZE);
+    }
+  }
+  Serial.print(text);
+}
+
+void mylog(const String& text, bool forceWrite = false)
+{
+  mylog(text.c_str(), forceWrite);
+}
+
+void mylog(double d, bool forceWrite = false )
+{
+  mylog(String(d), forceWrite);
+}
+
+void mylog(unsigned long l, bool forceWrite = false )
+{
+  mylog(String(l), forceWrite);
+}
+
+void mylog(bool b, bool forceWrite = false )
+{
+  mylog(String(b), forceWrite);
+}
+
+void mylog(int i, bool forceWrite = false )
+{
+  mylog(String(i), forceWrite);
 }
 
 void addTableRow(String& table, const char* col1, const char* col2)
@@ -248,6 +334,15 @@ void getDeviceInfo(String& deviceInfo)
   addTableRow(deviceInfo, "IP",               WiFi.localIP().toString().c_str());
   addTableRow(deviceInfo, "SSID",             WiFi.SSID().c_str());
   addTableRow(deviceInfo, "RSSI",             String(WiFi.RSSI()).c_str());
+  addTableRow(deviceInfo, "SPIFFS total",     String(SPIFFS.totalBytes()).c_str());
+  addTableRow(deviceInfo, "SPIFFS used",      String(SPIFFS.usedBytes()).c_str());
+  addTableRow(deviceInfo, "SPIFFS available", String(SPIFFS.totalBytes()-SPIFFS.usedBytes()).c_str());
+  addTableRow(deviceInfo, "log file size",    String(SPIFFS.open(logFileName,"r").size()).c_str());
+  addTableRow(deviceInfo, "log buffer size",  String(LOGBUFFERSIZE).c_str());
+  addTableRow(deviceInfo, "log buffer used",  String(logString.length()).c_str());
+  addTableRow(deviceInfo, "log active",       String(logActive).c_str());
+  addTableRow(deviceInfo, "watchdog time (s)",  String(pasXWatchDogTime/1000).c_str());
+
   deviceInfo += "</table>";
 }
 
@@ -270,16 +365,17 @@ bool readSensor()
   
   if (dhtExists)
   {
+    //mylog("dht:");
     temp = dht.getTemperature();
     hum  = dht.getHumidity();
-    Serial.print("dht:");
-    Serial.print(dht.getStatusString());
+    
+    //mylog(dht.getStatusString());
     
   }
   else if (bmeExists)
   {
       BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
-      BME280::PresUnit presUnit(BME280::PresUnit_Pa);
+      BME280::PresUnit presUnit(BME280::PresUnit_hPa);
     
       bme.read(pres, temp, hum, tempUnit, presUnit);
   }
@@ -288,17 +384,21 @@ bool readSensor()
     return success;
   }
 
-  if (!isnan(temp) && !isnan(hum))
+  // only take over plausible values
+  if (!isnan(temp) 
+   && !isnan(hum) 
+   && temp >-50.0 
+   && hum  >0.0)
   {
     temperature = temp;
     humidity    = hum;
     success = true;
+    if (!isnan(pres))
+    {
+      pressure = pres;
+    }
   }
-  if (!isnan(pres))
-  {
-    pressure = pres;
-  }
-
+  
   return success;
 }
 
@@ -353,6 +453,30 @@ void toggleLED()
   digitalWrite(LED_BUILTIN, ledStatus);
 }
 
+void getServerRequest(String& message)
+{
+    message += "URI: ";
+    message += server.uri();
+    message += "\nMethod: ";
+    message += (server.method() == HTTP_GET)?"GET":"POST";
+    message += "\nArguments: ";
+    message += server.args();
+    message += "\n";
+
+    for (int i=0; i<server.args(); i++)
+    {
+      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+    }
+    message += "\nHeader: ";
+    message += server.headers();
+    message += "\n";
+    for (int i=0; i<server.headers(); i++)
+    {
+      message += " " + server.headerName(i) + ": " + server.header(i) + "\n";
+    }
+  
+}
+
 void notFound()
 {
   bool foundValidURI = false;
@@ -379,21 +503,13 @@ void notFound()
   if (!foundValidURI)
   {
     String message = "File Not Found\n\n";
-    message += "URI: ";
-    message += server.uri();
-    message += "\nMethod: ";
-    message += (server.method() == HTTP_GET)?"GET":"POST";
-    message += "\nArguments: ";
-    message += server.args();
-    message += "\n";
-    for (int i=0; i<server.args(); i++)
-    {
-      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
-    }
+    getServerRequest(message);
+
     server.send(404, "text/plain", message);
   }
 
 }
+
 
 
 
@@ -403,7 +519,7 @@ bool readConfigFile()
   
   if (!f) 
   {
-    Serial.println("Configuration file not found");
+    mylog("Configuration file not found");
     return false;
   } 
   else 
@@ -418,7 +534,8 @@ bool readConfigFile()
     JsonObject& json = jsonBuffer.parseObject(buf.get());
     if (!json.success()) 
     {
-      Serial.println("JSON parseObject() failed");
+      mylog(configFileName);
+      mylog("JSON parseObject() failed\n");
       return false;
     }
     json.printTo(Serial);
@@ -437,7 +554,7 @@ bool readConfigFile()
     }
     
   }
-  Serial.println("\nConfig file was successfully parsed");
+  mylog("\nConfig file was successfully parsed\n");
   
   return true;
 }
@@ -446,7 +563,7 @@ bool readConfigFile()
 bool writeConfigFile() 
 {
    
-  Serial.println("Saving config file");
+  mylog("Saving config file");
   DynamicJsonBuffer jsonBuffer;
   JsonObject& json = jsonBuffer.createObject();
 
@@ -473,7 +590,7 @@ bool existsI2c(byte address)
   }
   else if (error==4)
   { 
-    Serial.print("Unknow error at address 0x");
+    mylog("Unknow error at address 0x");
     if (address<16)
       Serial.print("0");
     Serial.println(address,HEX);
@@ -507,23 +624,24 @@ void scanI2c()
 //const uint8_t  * font9 = u8g2_font_t0_11_tf; 
 const uint8_t  * font9 = u8g2_font_profont11_tf ;
 //const uint8_t  * font9 = u8g2_font_profont10_tf;
+const uint8_t  * font20 = u8g2_font_logisoso20_tf;
 const uint8_t  * font24 = u8g2_font_logisoso24_tf;
 const uint8_t  * font30 = u8g2_font_logisoso30_tf;
 const uint8_t  * font38 = u8g2_font_logisoso38_tf;
 
 
-static void displayOledScreen(bool isAP=false )
+static void displayOledScreen(const char * SSID = NULL, const char * IP=NULL, const char* infoText=NULL)
 {
   if (displayOled)
   {
     displayOled->clearBuffer();
    
-    if (displayLcd || !setupComplete)
+    if (displayLcd || !setupComplete) //if we have an extra LCD...
     {
       // if there is a LCD, the oled is for information only,.
       // so we show all sorts of gereral information
       displayOled->setFont(font9);
-      displayOled->drawStr( 00, 00, isAP ? ApInfoText : WiFi.isConnected() ? "connected" : "connecting...");  
+      displayOled->drawStr( 00, 00, infoText ? infoText : WiFi.isConnected() ? "connected" : "connecting...");  
 
       displayOled->drawStr( 00, 10, "ID:");  
       displayOled->drawStr( 20, 10, WiFi.macAddress().c_str());  
@@ -531,8 +649,8 @@ static void displayOledScreen(bool isAP=false )
       displayOled->drawStr( 00, 20, "MyIP:");
       displayOled->drawStr( 00, 30, "SSID:");  
 
-      displayOled->drawStr( 30, 20, isAP ? ApIp   : WiFi.localIP().toString().c_str());
-      displayOled->drawStr( 30, 30, isAP ? ApSsid : WiFi.SSID().c_str());  
+      displayOled->drawStr( 30, 20, IP   ? IP   : WiFi.localIP().toString().c_str());
+      displayOled->drawStr( 30, 30, SSID ? SSID : WiFi.SSID().c_str());  
 
       if (myType == eRoomLabel)
       {
@@ -569,24 +687,33 @@ static void displayOledScreen(bool isAP=false )
       displayOled->drawStr( 20, 00, WiFi.localIP().toString().c_str());  
       */
       //unsigned int i = adc1_get_raw(ADC1_CHANNEL_0);
+      /*
       unsigned long i = pHMeter.readADC();
 
       displayOled->drawStr( 00, 00, "ADC:");  
       displayOled->drawStr( 30, 00, String(i).c_str());  
 
       displayOled->drawStr( 80, 00, String(i*3770/4096).c_str());  
-
+      */
       //displayOled->setFont(font38);
+      displayOled->setFont(font20);
+      displayOled->drawStr(  0, 20, "pH:");
+      //displayOled->drawStr( 64, 9, pHMeter.getpHString().c_str());
       displayOled->setFont(font30);
-      displayOled->drawStr(  0, 9, "pH:");
-      //displayOled->drawStr( 64, 9, String(pHMeter.getpH(),1).c_str());
-      displayOled->drawStr( 50, 9, String(pHMeter.getpH(),1).c_str());
+      displayOled->drawStr( 35, 9, pHMeter.getpHString().c_str());
     }
     
     displayOled->sendBuffer();
 
   }
 
+}
+
+void blinkLcdScreen(unsigned long ms)
+{
+  displayLcd->noBacklight();
+  delay(ms);
+  displayLcd->backlight();
 }
 
 void displayLcdScreen(String& line1, 
@@ -616,7 +743,7 @@ void displayLcdScreen(String& line1,
 }
 
 
-void displayLcdScreen(bool isAP = false)
+void displayLcdScreen(const char * SSID = NULL, const char * IP=NULL, const char* infoText=NULL)
 {
   if (displayLcd)
   {
@@ -632,9 +759,9 @@ void displayLcdScreen(bool isAP = false)
     else
     {
       line1 = roomLabel.makeLCDLine(WiFi.macAddress().c_str(),"ID:");
-      line2 = roomLabel.makeLCDLine(isAP ? ApIp       : WiFi.localIP().toString().c_str(), "MyIP:");
-      line3 = roomLabel.makeLCDLine(isAP ? ApSsid     : WiFi.SSID().c_str(), "SSID:");
-      line4 = roomLabel.makeLCDLine(isAP ? ApInfoText : WiFi.isConnected() ? "connected" : "connecting...", "");
+      line2 = roomLabel.makeLCDLine(IP       ? IP       : WiFi.localIP().toString().c_str(), "MyIP:");
+      line3 = roomLabel.makeLCDLine(SSID     ? SSID     : WiFi.SSID().c_str(), "SSID:");
+      line4 = roomLabel.makeLCDLine(infoText ? infoText : WiFi.isConnected() ? "connected" : "connecting...", "");
       enabled = true;
     }
 
@@ -651,17 +778,35 @@ void displayLcdScreen(bool isAP = false)
 }
 
 
+void wifiManagerConnectCallback (WiFiManager *myWiFiManager) 
+{
+  mylog("\nwifiManagerConnectCallback: ");
+  String SSID = myWiFiManager->getSSID();
+  if (SSID.length()==0)
+  {
+    SSID = WiFi.SSID();
+  }
+
+  displayLcdScreen(SSID.c_str(), myWiFiManager->getIp().toString().c_str(), "Connecting...");
+  displayOledScreen(SSID.c_str(), myWiFiManager->getIp().toString().c_str(), "Connecting...");
+  mylog("connecting to ");
+  mylog(SSID);
+  mylog("IP ");
+  mylog(myWiFiManager->getIp().toString());
+  mylog("\n");
+}
 
 
 void wifiManagerConfigModeCallback (WiFiManager *myWiFiManager) 
 {
-  displayLcdScreen(true);
-  displayOledScreen(true);
+  mylog("wifiManagerConfigModeCallback: ");
+  displayLcdScreen(ApSsid, ApIp, ApInfoText);
+  displayOledScreen(ApSsid, ApIp, ApInfoText);
 }
 
 void wifiManagerSaveConfigCallback () 
 {
-  Serial.println("wifiManagerSaveConfigCallback");
+  mylog("wifiManagerSaveConfigCallback ");
   staticIp = WiFi.localIP().toString();
   staticGateway = WiFi.gatewayIP().toString();
   staticSubnetMask = WiFi.subnetMask().toString();
@@ -671,14 +816,12 @@ void wifiManagerSaveConfigCallback ()
 void wifiStart()
   {
     WiFiManager WifiManager;
+    
+    WifiManager.setConnectCallback(wifiManagerConnectCallback);
     WifiManager.setAPCallback(wifiManagerConfigModeCallback);
     WifiManager.setSaveConfigCallback(wifiManagerSaveConfigCallback);
+    WifiManager.setConfigPortalTimeout(120);
 
-    if (digitalRead(TRIGGER_PIN1) == LOW)
-    {
-      WifiManager.resetSettings();
-      Serial.println("Manual wifi data reset");
-    }  
     
     //set static ip
   
@@ -689,18 +832,40 @@ void wifiStart()
     WifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
   
     String hostName = String(F("MSI")) + String((unsigned long)ESP.getEfuseMac()); 
-
-    // generate the Access Point 
     WiFi.setHostname(hostName.c_str());
-    WifiManager.autoConnect(ApSsid);
 
-    Serial.print("MyIP:");
-    Serial.println(WiFi.localIP().toString());
-    Serial.print("MyMac:");
-    Serial.println(WiFi.macAddress());
+
+    if (digitalRead(TRIGGER_PIN1) == LOW)
+    {
+      WifiManager.resetSettings();
+      mylog("Forcing ConfigPortal\n");
+      WifiManager.startConfigPortal(ApSsid);
+    }  
+
+
+    do
+    {
+      WifiManager.autoConnect(ApSsid); 
+      
+      if(!WiFi.isConnected())
+      {
+        mylog("\n\n\nWifiManager autoconnect failed, trying again\n");
+        delay(100);
+        ESP.restart();
+      }
+    }
+    while (!WiFi.isConnected());
+
+
+    mylog("MySSID:");
+    mylog(WiFi.SSID());
+    mylog("\nMyIP:");
+    mylog(WiFi.localIP().toString());
+    mylog("\nMyMac:");
+    mylog(WiFi.macAddress());
     WiFi.setHostname(hostName.c_str());
-    Serial.print("MyHostName:");
-    Serial.println(WiFi.getHostname());
+    mylog("\nMyHostName:");
+    mylog(WiFi.getHostname());
     
 
   }
@@ -710,18 +875,18 @@ bool processMessage(const String& content, String & errorMessage)
   bool success = false;
   
   String messageId = OrderParameterMessage::getMessageIdFromXml(content);
-  Serial.print(messageId);
+  mylog(messageId);
   if (messageId.length())
   {
     if (roomLabel.hasThisMessageId(messageId.c_str()))
     {
       //Serial.print(" is a RoomLabel message, success:");
       success = roomLabel.parseXml(content, errorMessage);
-      Serial.print(success);
+      mylog(success);
       
       if (roomLabel.hasMessageToSend())
       {
-        Serial.println(getNow());
+        //mylog(getNow());
         
         // we ignore the fact that pressure might be NAN, handled by room label 
         String response = roomLabel.getNextMessageString(temperature, 
@@ -729,33 +894,36 @@ bool processMessage(const String& content, String & errorMessage)
                                                          pressure); 
 
         //Serial.print("QueueSize:");
-        Serial.print(sendQueue.count());
+        //Serial.print(sendQueue.count());
 
+        //Serial.print("--push--");
         sendQueue.push(response);
         
         //Serial.print("->QueueSize:");
-        Serial.println(sendQueue.count());
+        //Serial.println(sendQueue.count());
 
         roomLabel.setHasMessageToSend(false);
-        Serial.print(getNow());
+        //Serial.print(getNow());
       }
 
     }
     else if (pHMeter.hasThisMessageId(messageId.c_str()))
     {
       success = pHMeter.parseXml(content, errorMessage);
-      Serial.print(success);
+      mylog("phMeter.parseXml:");
+      mylog(success);
       
+      mylog( " hasMessageToSend:");
       if (pHMeter.hasMessageToSend())
       {
-        Serial.println(getNow());
-                
+        mylog( "true");
         String response = pHMeter.getNextMessageString(); 
-
         sendQueue.push(response);
-
         pHMeter.setHasMessageToSend(false);
-        Serial.print(getNow());
+      }
+      else
+      {
+        mylog( "false");
       }
 
     }    /*
@@ -766,7 +934,7 @@ bool processMessage(const String& content, String & errorMessage)
     */
     else
     {
-      errorMessage = String("No message handler found for ") + messageId;
+      errorMessage = String("The message ID \"") + messageId +"\" is not supported by this device.";
     }
 
     if (success)
@@ -775,7 +943,7 @@ bool processMessage(const String& content, String & errorMessage)
       File f = SPIFFS.open(receivedMessageFileName, "w");
       if (!f) 
       {
-        Serial.println("Failed to open message file for writing");
+        mylog("Failed to open message file for writing\n");
       }
       else
       {
@@ -784,8 +952,8 @@ bool processMessage(const String& content, String & errorMessage)
       }
     }
   }
-  Serial.print(errorMessage);
-  Serial.println(".");
+  mylog(errorMessage);
+  mylog(".\n");
   return success;
 }
 /*
@@ -818,26 +986,98 @@ void readXmlFromFS()
 }
 */
 
+unsigned long lastGetNextMessage = 0;
+
 void serverStart()
 {
+  
   server.on("/", HTTP_GET, [](){
-    Serial.println("MainPage");
-      server.send(200, "text/html", getMainPage());
-      
+    unsigned long start = millis();
+    mylog("MainPage:");
+    server.send(200, "text/html", getMainPage());  
+    mylog(millis()-start);
+    mylog("ms\n");
+    
   });
 
   server.on("/getsecuretoken", HTTP_POST, [](){
-      Serial.println("getsecuretoken");
-      server.send(200, "text/JSON", token);
+      unsigned long start = millis();
+      
+    /*
+      String message = "GetSecureToken:";
+      getServerRequest(message);
+      mylog(message);
+    */
+      server.send(200, "application/JSON", token);
+      lastPasXInteraction = millis();
+      mylog(millis()-start);
+      mylog("ms\n");
+  });
+
+  server.on("/nowatchdog", HTTP_GET, [](){
+      Serial.println("nowatchdog");
+      server.send(200, "text/PLAIN", "watchdog disabled");
+      pasXWatchDogTime = 1000000000L;
+  });
+
+  server.on("/watchdog", HTTP_GET, [](){
+      Serial.println("watchdog");
+      server.send(200, "text/PLAIN", "watchdog enabled");
+      pasXWatchDogTime = WATCHDOGTIME;
+  });
+  server.on("/resetlog", HTTP_GET, [](){
+      SPIFFS.remove(logFileName);
+      mylog(getNow());
+      mylog("\nresetlog\n");
+      server.send(200, "text/PLAIN", "log reset");
+  });
+  server.on("/activatelog", HTTP_GET, [](){
+      logActive=true;
+      mylog(getNow());
+      mylog("\nactivate log\n");
+      server.send(200, "text/PLAIN", "log activated");
+  });
+  server.on("/deactivatelog", HTTP_GET, [](){
+      mylog(getNow());
+      mylog("\ndeactivate log\n");
+      logActive=false;
+      server.send(200, "text/PLAIN", "log deactivated");
+  });
+
+
+  server.on("/log", HTTP_GET, [](){
+      unsigned long start = millis();
+      mylog("log", true);
+      if (logActive)
+      {
+        File f = SPIFFS.open(logFileName, "r");
+        if (!f || f.size()==0) 
+        {
+          Serial.println("logfile not found");
+          server.send(404, "text/PLAIN", "logfile not found");
+        } 
+        else 
+        {
+          server.streamFile(f, "text/PLAIN");
+        }
+      }
+      else
+      {
+        server.send(200, "text/PLAIN", logString);
+      }
+      
+      mylog(millis()-start);
+      mylog("ms\n");
   });
 
   server.on("/lastsentmessage", HTTP_GET, [](){
+      unsigned long start = millis();
       Serial.println("lastsentmessage");
       File f = SPIFFS.open(sentMessageFileName, "r");
       if (!f || f.size()==0) 
       {
         Serial.println("Messagefile not found");
-        server.send(404, "text/plain", "Messagefile not found");
+        server.send(404, "application/xml", "Messagefile not found");
       } 
       else 
       {
@@ -852,12 +1092,15 @@ void serverStart()
         // Closing file
         f.close();
         //Serial.println(buf.get());
-        server.send(200, "text/XML", buf.get());
+        server.send(200, "application/XML", buf.get());
       }
+    Serial.print(millis()-start);
+    Serial.println("ms");
   });
 
   server.on("/lastreceivedmessage", HTTP_GET, [](){
-      Serial.println("lastreceivedmessage");
+     unsigned long start = millis();
+     Serial.println("lastreceivedmessage");
       File f = SPIFFS.open(receivedMessageFileName, "r");
       if (!f) 
       {
@@ -877,47 +1120,45 @@ void serverStart()
         // Closing file
         f.close();
         //Serial.println(buf.get());
-        server.send(200, "text/XML", buf.get());
+        server.send(200, "application/XML", buf.get());
       }
+    Serial.print(millis()-start);
+    Serial.println("ms");
   });
 
 
   server.on("/GetNextMessage", HTTP_GET, [](){
+    unsigned long start = millis();
+    mylog(String("\n")+getNow() + ": ");
+    mylog(start-lastGetNextMessage);
+    mylog("ms<->");
+    
+    lastGetNextMessage = start;
+    String message = "GetNextMessage";
+    //getServerRequest(message);
+    mylog(message);
 
-    Serial.print("GetNextMessage ");
     String response;
     toggleLED();
-    /*
-    if (roomLabel.hasMessageToSend())
-    {
-      
-      
-      // we ignore the fact that pressure might be NAN, handled by room label 
-      response = roomLabel.getNextMessageString(temperature, 
-                                                humidity,
-                                                pressure); 
-     
-      
-      roomLabel.setHasMessageToSend(false);
-      Serial.print(getNow());
-    }*/
-
+    
     if (!sendQueue.isEmpty())
     {
+/*
       Serial.print(getNow());
-      //Serial.print("QueueSize:");
+      Serial.print("QueueSize:");
       Serial.print(sendQueue.count());
-
+      Serial.print("--pop--");
+*/      
       response = sendQueue.pop();
 
       //Serial.print("->QueueSize:");
-      Serial.print(sendQueue.count());
+      //Serial.print(sendQueue.count());
 
        //Save XML
       File f = SPIFFS.open(sentMessageFileName, "w");
       if (!f) 
       {
-        Serial.println("Failed to open message file for writing");
+        mylog("Failed to open message file for writing");
       }
       else
       {
@@ -925,19 +1166,26 @@ void serverStart()
         f.close();
       }
 
-      Serial.print(" -> ");
-      Serial.print(getNow());
     }
     else 
     {
       response = "<NoMessage/>";
     }
-    server.send(200, "text/plain", response);
-    Serial.println(".");
+    server.send(200, "application/XML", response);
+    mylog(".");
+    lastPasXInteraction = millis();
+    mylog(millis()-start);
+    mylog("ms\n");
   });
 
   server.on("/PostMessage", HTTP_POST, [] () {
-    Serial.print("PostMessage");
+    unsigned long start = millis();
+    String message = "PostMessage:";
+
+    //getServerRequest(message);
+    Serial.println(message);
+
+    toggleLED();
     Serial.println(getNow());
     String errorString;
     bool Ok= false;
@@ -974,16 +1222,18 @@ void serverStart()
     if (Ok)
     {
       displayLcdScreen();
-      server.send(200, "text/plain", getTransferResultText(Ok, errorString.c_str()));
+      server.send(200, "application/XML", getTransferResultText(Ok, errorString.c_str()));
     }
     else
     {
       Serial.println(".fail");
-      server.send(200, "text/plain", getTransferResultText(Ok, errorString.c_str()));
+      server.send(200, "application/XML", getTransferResultText(Ok, errorString.c_str()));
       Serial.println(errorString.c_str());
     }
-    Serial.print(getNow());
-    Serial.println(".");
+    Serial.print(".");
+    lastPasXInteraction = millis();
+    Serial.print(millis()-start);
+    Serial.println("ms");
   });
 
   server.onNotFound(notFound);
@@ -1000,7 +1250,7 @@ void oledStart()
     // set default font
     displayOled->setFont(font9);
     displayOled->setFontPosTop();
-    Serial.println("Found oled");
+    mylog("Found oled\n");
   }
 
   if (displayOled)
@@ -1015,12 +1265,12 @@ void lcdStart()
   {
     if (existsI2c(ADDRESS_LCD1))
     {
-      Serial.println("Using LCD 1");
+      mylog("Using LCD 1\n");
       displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD1,LCDMAXCHARS,4);
     }
     else if (existsI2c(ADDRESS_LCD2))
     {
-      Serial.println("Using LCD 2");
+      mylog("Using LCD 2\n");
       displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD2,LCDMAXCHARS,4);
     }
   }
@@ -1038,7 +1288,7 @@ void RTCStart()
   if (existsI2c(ADDRESS_RTC))
   {
     rtcExists = true;
-    Serial.println("found RTC");
+    mylog("found RTC\n");
     rtc.Begin();
     if (!rtc.IsDateTimeValid()) 
     {
@@ -1046,7 +1296,7 @@ void RTCStart()
         //    1) first time you ran and the device wasn't running yet
         //    2) the battery on the device is low or even missing
 
-        Serial.println("RTC lost confidence in the DateTime!");
+        mylog("RTC lost confidence in the DateTime!\n");
 
         // following line sets the RTC to the date & time this sketch was compiled
         // it will also reset the valid flag internally unless the Rtc device is
@@ -1057,24 +1307,24 @@ void RTCStart()
 
     if (!rtc.GetIsRunning())
     {
-        Serial.println("RTC was not actively running, starting now");
+        mylog("RTC was not actively running, starting now\n");
         rtc.SetIsRunning(true);
     }
 
     RtcDateTime now = rtc.GetDateTime();
     if (now < compiled) 
     {
-        Serial.println("RTC is older than compile time!  (Updating DateTime)");
+        mylog("RTC is older than compile time!  (Updating DateTime)\n");
         rtc.SetDateTime(compiled);
     }
     else if (now > compiled) 
     {
-        Serial.println("RTC is newer than compile time. (this is expected)");
-        Serial.println(getDateTimeString(now));
+        mylog("RTC is newer than compile time. (this is expected)\n");
+        mylog(getDateTimeString(now));
     }
     else if (now == compiled) 
     {
-        Serial.println("RTC is the same as compile time! (not expected but all is fine)");
+        mylog("RTC is the same as compile time! (not expected but all is fine)\n");
     }
 
     // never assume the Rtc was last configured by you, so
@@ -1082,38 +1332,73 @@ void RTCStart()
     rtc.Enable32kHzPin(false);
     rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone); 
   }
+  else
+  {
+    mylog("NO RTC FOUND!\n");
+  }
 }
 
 void dhtStart()
 {
+  mylog("Looking for DHT:");
   dht.setup(DHT_PIN);
-  if (dht.getStatus() == dht.ERROR_NONE)
+  unsigned long waitUntil = millis()+1000;
+  
+  do
   {
-    dhtExists = true;
-  }
-  Serial.print("dht:");
-  Serial.println(dht.getStatusString());
+    if (dht.getStatus() == dht.ERROR_NONE)
+    {
+      dhtExists = true;
+    }
+    else
+    {
+      mylog("#");
+      dht.setup(DHT_PIN);
+      toggleLED();
+      delay(20);
+    }
+  } 
+  while (!dhtExists && (millis() < waitUntil));
+      
+  
+  mylog("dht:");
+  mylog(dht.getStatusString());
+  mylog("\n");
+  
 }
 
 void bmeStart()
 {
   unsigned long waitUntil = millis()+1000;
-  while(!bme.begin() && millis()<waitUntil)
+  bool success=false;
+  do 
   {
+    success = bme.begin();
+    if (success)
+    {
+      break;
+    }
     delay(200);
-  }
+  } while (millis()<waitUntil);
 
-  switch(bme.chipModel())
+  if (success)
   {
-     case BME280::ChipModel_BME280:
-       Serial.println("Found BME280 sensor!");
-       bmeExists= true;
-       break;
-     case BME280::ChipModel_BMP280:
-       Serial.println("Found BM_P_280 sensor!");
-       break;
-     default:
-       Serial.println("Found UNKNOWN sensor! Error!");
+    switch(bme.chipModel())
+    {
+        case BME280::ChipModel_BME280:
+          mylog("\nFound BME280 sensor!\n");
+          bmeExists= true;
+          break;
+        case BME280::ChipModel_BMP280:
+          mylog("\nFound BM_P_280 sensor!\n"); // we do not support this type
+          break;
+        default:
+          mylog("\nFound UNKNOWN sensor! Error!\n");
+    }
+  }
+  else
+  {
+    mylog("\nno BME found\n");
   }
 }
 
@@ -1146,14 +1431,20 @@ void setup()
   pinMode(TRIGGER_PIN1, INPUT_PULLUP);           // set pin to input
   pinMode(TRIGGER_PIN2, INPUT_PULLUP);           // set pin to input
       
-     
+ 
+  bool result = SPIFFS.begin();
+  mylog(String(" SPIFFS opened: ") + String(result));
+    
   Wire.begin(SDA_PIN,SCL_PIN);
-  Serial.println("-- scanI2c --");
+  mylog("\n-- scanI2c --\n");
   scanI2c();
 
   RTCStart();
-  dhtStart();
   bmeStart();
+  if (!bmeExists)
+  {
+    dhtStart();
+  }
   pHStart();
 
   if (bmeExists || dhtExists)
@@ -1179,12 +1470,10 @@ void setup()
   lcdStart();
 
     // Mount the filesystem
-  bool result = SPIFFS.begin();
-  Serial.println("SPIFFS opened: " + result);
 
   if (!readConfigFile()) 
   {
-    Serial.println("Failed to read configuration file, using default values");
+    mylog("Failed to read configuration file, using default values\n");
   }
 
   //readXmlFromFS();
@@ -1193,18 +1482,15 @@ void setup()
   displayOledScreen();
   wifiStart();
 
-  Serial.println("Connected!");
+  mylog("\nConnected!\n");
   digitalWrite(LED_BUILTIN, LOW);
   serverStart();
-  Serial.println("Server Started.");
+  mylog("Server Started.\n");
 
-  displayOledScreen();
-  displayLcdScreen();
+  displayOledScreen(NULL, NULL, "waiting for PAS-X...");
+  displayLcdScreen(NULL, NULL, "waiting for PAS-X...");
 
-  setupComplete = true;
-
-  roomLabel.readLcdFile();
-  displayLcdScreen();
+  lastPasXInteraction = millis(); // Watch dog timer starts now
 }
 
 
@@ -1213,29 +1499,44 @@ unsigned long nextDisplayUpdate = DISPLAYUPDATEINTERVAL;
 void loop() 
 {
   heap_caps_check_integrity_all(true);
+
+  // waiting for PAS-X to start polling
+  if (!setupComplete)
+  {
+    if (lastGetNextMessage) // did PAS-X send a message?
+    {
+      setupComplete = true;
+      if (myType == eRoomLabel)
+      {
+        roomLabel.readLcdFile();
+        displayLcdScreen();
+      }
+    }
+  }
+  else // setup IS complete, PAS-X responded, check sensors in intervalls.
+  {
+    if (millis() > nextSensorRead) 
+    {
+
+      nextSensorRead = millis() + SENSORREADINTERVAL;
+      if (readSensor())
+      {
+        displayLcdScreen(); // #todo: necessary?
+      }
+      else if (dhtExists) // DHT sensor but no reading? Try again faster.
+      {
+        nextSensorRead = millis() + SENSORREADINTERVAL/10;
+      }
+    }
+
+    if (millis() > nextDisplayUpdate)
+    {
+      nextDisplayUpdate = millis() + DISPLAYUPDATEINTERVAL;
+      displayOledScreen();
+    }
+
+  }
   
-  if (millis() > nextSensorRead)
-  {
-
-    nextSensorRead = millis() + SENSORREADINTERVAL;
-    if (readSensor())
-    {
-      displayLcdScreen(); // #todo: necessary?
-    }
-    else if (dhtExists) // DHT sensor but no reading? Try again faster.
-    {
-      nextSensorRead = millis() + SENSORREADINTERVAL/10;
-    }
-    Serial.print(".");
-  }
-
-
-  if (millis() > nextDisplayUpdate)
-  {
-    nextDisplayUpdate = millis() + DISPLAYUPDATEINTERVAL;
-    displayOledScreen();
-  }
-
   if (!digitalRead(TRIGGER_PIN1))
   {
     Serial.print("1");
@@ -1244,13 +1545,27 @@ void loop()
   {
     Serial.print("2");
   }
+  
+  if (millis() - lastPasXInteraction > pasXWatchDogTime)
+  {
+    mylog("\n############################################################################\n");
+    mylog(getNow());
+    mylog("################################ watchdog reset ############################\n");
+    mylog("############################################################################\n", true);
+    delay(100);
+    ESP.restart();
+  }
+
 
   // Check if WLAN is connected
   if (WiFi.status() != WL_CONNECTED)
-  {
-    wifiStart();
+  {   
+    mylog("reconnecting...");
+    WiFi.reconnect();
+    mylog("reconnected!\n");
   }
-
+  toggleLED();
+  delay(18);
   server.handleClient();
 }
 

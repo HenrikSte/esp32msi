@@ -36,6 +36,11 @@ const char PROGMEM  PH_MDGetpH[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                                         "<direction>TO_MES</direction>"
                                         "<isMesQualifier>false</isMesQualifier>"
                                         "<isSfQualifier>false</isSfQualifier>"
+                                        "<definitionRange>"
+                                          "<fromValue>0</fromValue>"
+                                          "<toValue>14</toValue>"
+                                        "</definitionRange>"
+                                        "<uom>pH</uom>"
                                     "</parameter>"
                                     "<attachment>"
                                     "</attachment>"
@@ -66,6 +71,11 @@ const char PROGMEM  PH_MDCalibrateLow[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                         "<direction>TO_MES</direction>"
                                         "<isMesQualifier>false</isMesQualifier>"
                                         "<isSfQualifier>false</isSfQualifier>"
+                                        "<definitionRange>"
+                                          "<fromValue>0</fromValue>"
+                                          "<toValue>14</toValue>"
+                                        "</definitionRange>"
+                                        "<uom>pH</uom>"
                                     "</parameter>"
                                     "<parameter>"
                                         "<name>SetpH</name>"
@@ -74,6 +84,11 @@ const char PROGMEM  PH_MDCalibrateLow[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                         "<direction>TO_SF</direction>"
                                         "<isMesQualifier>false</isMesQualifier>"
                                         "<isSfQualifier>false</isSfQualifier>"
+                                        "<definitionRange>"
+                                          "<fromValue>0</fromValue>"
+                                          "<toValue>14</toValue>"
+                                        "</definitionRange>"
+                                        "<uom>pH</uom>"
                                     "</parameter>"
                                     "<attachment>"
                                     "</attachment>"
@@ -103,6 +118,11 @@ const char PROGMEM  PH_MDCalibrateHigh[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                         "<direction>TO_MES</direction>"
                                         "<isMesQualifier>false</isMesQualifier>"
                                         "<isSfQualifier>false</isSfQualifier>"
+                                        "<definitionRange>"
+                                          "<fromValue>0</fromValue>"
+                                          "<toValue>14</toValue>"
+                                        "</definitionRange>"
+                                        "<uom>pH</uom>"
                                     "</parameter>"
                                     "<parameter>"
                                         "<name>SetpH</name>"
@@ -111,6 +131,11 @@ const char PROGMEM  PH_MDCalibrateHigh[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                         "<direction>TO_SF</direction>"
                                         "<isMesQualifier>false</isMesQualifier>"
                                         "<isSfQualifier>false</isSfQualifier>"
+                                        "<definitionRange>"
+                                          "<fromValue>0</fromValue>"
+                                          "<toValue>14</toValue>"
+                                        "</definitionRange>"
+                                        "<uom>pH</uom>"
                                     "</parameter>"
                                     "<attachment>"
                                     "</attachment>"
@@ -226,6 +251,12 @@ class PHMeter:public OrderParameterMessage
         return pHSensor.singleReading().getpH();
       }
 
+      String getpHString() 
+      {
+        return String(getpH(),2);
+      }
+
+
       int readADC(int overSampling = 1024)
       {
         int reading = pHSensor.readADC(overSampling);
@@ -245,17 +276,18 @@ class PHMeter:public OrderParameterMessage
           else if (messageId == "CalibrateHigh")
           {
             pHSensor.calibrationHigh(atof(getValue("SetpH")));
+            setHasMessageToSend(true);  
             class PHCalibrationValue c= pHSensor.getCalibrationValue();
             c.saveToFile();
-
-            setHasMessageToSend(true);  
+            pHSensor.initialize(c);
           }
-          else if (messageId == "Calibr ateLow")
+          else if (messageId == "CalibrateLow")
           {
             pHSensor.calibrationLow(atof(getValue("SetpH")));
             setHasMessageToSend(true);  
             class PHCalibrationValue c= pHSensor.getCalibrationValue();
             c.saveToFile();
+            pHSensor.initialize(c);
           }
         }
         return success;
@@ -295,7 +327,7 @@ class PHMeter:public OrderParameterMessage
         || messageId == "CalibrateLow")
         {
           nextMessageString = PH_responseGetpH;
-          nextMessageString.replace(PH_PH, String(getpH(),1));
+          nextMessageString.replace(PH_PH, getpHString());
         }
 
         if (nextMessageString.length())
