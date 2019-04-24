@@ -24,6 +24,7 @@ class OrderParameterMessage
         {
           parameterCount = 0;
           hasMessage=false;
+          myDeviceTypeId="";
         };
 
         OrderParameterMessage(const OrderParameterMessage & other)
@@ -98,7 +99,7 @@ class OrderParameterMessage
             return false;
           }
 
-          //json.prettyPrintTo(Serial);
+          json.prettyPrintTo(Serial);
 
           json.printTo(f);
           f.close();
@@ -118,6 +119,12 @@ class OrderParameterMessage
         String systemId;
         unsigned long creationTime;
 
+        String lastBatchId;
+        String lastPU;
+
+
+        String myDeviceTypeId;
+
         void clear()
         {
           for (int i =0; i<parameterCount; i++)
@@ -132,6 +139,8 @@ class OrderParameterMessage
           creationTimeString="";
           systemId="";
           creationTime=0;
+         
+
         }
 
         int getParameterCount()
@@ -188,6 +197,11 @@ class OrderParameterMessage
           }
         }
 
+        float getValueFloat(const char * parameterName)
+        {
+          return getValueString(parameterName).toFloat();
+        }
+
         void logToSerial(HardwareSerial & serial)
         {
           serial.print("messageId: ");
@@ -219,16 +233,18 @@ class OrderParameterMessage
     virtual const char** getMessageDescriptionTexts() =0;
    
 
-    bool hasThisMessageId (const char * messageId)
+    bool hasThisMessageId (const char * messageId, const char * deviceTypeId)
     {
       bool found = false;
-
-      for (int i=0; i<getMessageDescriptionCount(); i++)
+      if (myDeviceTypeId.equals(deviceTypeId))
       {
-        if (getMessageDescriptionId(i).equals(messageId))
+        for (int i=0; i<getMessageDescriptionCount(); i++)
         {
-          found = true;
-          break;
+          if (getMessageDescriptionId(i).equals(messageId))
+          {
+            found = true;
+            break;
+          }
         }
       }
       return found;
@@ -274,9 +290,8 @@ class OrderParameterMessage
       }
     }
 
-        static String getMessageIdFromXml(const String& content)
+        static void getMessageIdFromXml(const String& content, String& messageId, String& deviceTypeId)
         {
-          
           XMLDocument doc;
           if (doc.Parse(content.c_str()))
           {
@@ -314,13 +329,17 @@ class OrderParameterMessage
                   e = message->FirstChildElement( "messageId" );
                   if (e)
                   {
-                    return e->GetText();
+                    messageId = e->GetText();
+                  }
+                  e = message->FirstChildElement( "deviceTypeId" );
+                  if (e)
+                  {
+                    deviceTypeId = e->GetText();
                   }
                 }
               }
             }
           }
-          return "";
         }
 
 

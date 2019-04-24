@@ -5,8 +5,8 @@
 //#include <AnalogPHMeter.h>
 
 AnalogPHMeter pHSensor;
-
-
+                                          
+const char PROGMEM  pHConfigFileName[] = "/phConfig.json";
 
 #define PH_BATCHID             "{{BatchId}}"
 #define PH_PH                  "{{pH}}"
@@ -141,6 +141,41 @@ const char PROGMEM  PH_MDCalibrateHigh[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                     "</attachment>"
                                   "</MsiInterfaceDescription>";
 
+const char PROGMEM  PH_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+                                "<messageId>SetExceptionLimits</messageId>"
+                                "<supplierId>Werum</supplierId>"
+                                "<deviceTypeId>ESP_pH_meter</deviceTypeId>"
+                                "<description>Set the limits to create exceptions</description>"
+                                "<supplierVersion>1.0</supplierVersion>"
+                                "<systemId>DemoEspMsi_2</systemId>"
+                                "<creationTime>2019-04-23 13:05:00,000</creationTime>"
+                                "<parameter>"
+                                    "<name>UpperLimit</name>"
+                                    "<description>pH upper limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>14</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>pH</uom>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>LowerLimit</name>"
+                                    "<description>pH lower limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>14</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>pH</uom>"
+                                "</parameter>"
+                                "<attachment>"
+                                "</attachment>"
+                            "</MsiInterfaceDescription>";
+
 
 const char PROGMEM  PH_responseGetpH[] ="<?xml version=\"1.0\"\?>"
                             "<MsiMessageContainer xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
@@ -191,11 +226,14 @@ const char PROGMEM  PH_responseGetpH[] ="<?xml version=\"1.0\"\?>"
                                 "</message>"
                             "</MsiMessageContainer>";
 
-#define PH_MESSAGEDESCRIPTIONCOUNT 3
+#define PH_MESSAGEDESCRIPTIONCOUNT 4
 
-const char * PH_messageDescription[]      = { PH_MDGetpH, PH_MDCalibrateHigh, PH_MDCalibrateLow};
-const char * PH_messageDescriptionText[]  = { "GetpH",    "CalibrateHigh", "CalibrateLow"};
-const char * PH_messageDescriptionId[]    = { "GetpH",    "CalibrateHigh", "CalibrateLow"};
+const char * PH_messageDescription[]      = { PH_MDGetpH, PH_MDCalibrateHigh, PH_MDCalibrateLow,  PH_MDSetExceptionLimits};
+const char * PH_messageDescriptionText[]  = { "GetpH",    "CalibrateHigh",    "CalibrateLow",     "SetExceptionLimits"};
+const char * PH_messageDescriptionId[]    = { "GetpH",    "CalibrateHigh",    "CalibrateLow",     "SetExceptionLimits"};
+
+
+
 
 class PHMeter:public OrderParameterMessage
 {
@@ -203,6 +241,7 @@ class PHMeter:public OrderParameterMessage
       PHMeter()
       :OrderParameterMessage()
       {
+        myDeviceTypeId ="ESP_pH_meter";
         struct PHCalibrationValue pHCalibrationValue;
         pHSensor.initialize(pHCalibrationValue);
       }
@@ -210,12 +249,72 @@ class PHMeter:public OrderParameterMessage
       PHMeter(const OrderParameterMessage & other) 
       :OrderParameterMessage(other)
       {
+        
       }
       
       ~PHMeter()
       {
       }
 
+
+    void writeConfig()
+    {
+          logToSerial(Serial);
+          DynamicJsonBuffer jsonBuffer;
+          JsonObject& json = jsonBuffer.createObject();
+          // JSONify local configuration parameters
+          json["upperLimit"] = upperLimit;
+          json["lowerLimit"] = lowerLimit;
+          json["BatchID"]  = lastBatchId;
+          json["systemId"] = systemId;
+
+          json.prettyPrintTo(Serial);
+          OrderParameterMessage::writeJsonFile(pHConfigFileName, json);    
+    }
+
+    bool readConfig()
+    {
+      
+      SPIFFS.begin(); 
+      File f = SPIFFS.open(pHConfigFileName, "r");
+      
+      if (!f) 
+      {
+        Serial.println("pH file not found");
+        return false;
+      } 
+      else 
+      {
+        size_t size = f.size();
+        // Allocate a buffer to store contents of the file.
+        std::unique_ptr<char[]> buf(new char[size]);
+
+        f.readBytes(buf.get(), size);
+        f.close();
+        DynamicJsonBuffer jsonBuffer;
+        JsonObject& json = jsonBuffer.parseObject(buf.get());
+        if (!json.success()) 
+        {
+          Serial.print("JSON parseObject() failed:");
+          Serial.println(pHConfigFileName);
+
+          return false;
+        }
+        json.prettyPrintTo(Serial);
+        upperLimit = json["upperLimit"];
+        lowerLimit = json["lowerLimit"];
+
+        lastBatchId = (const char*)json["BatchID"];
+       
+        systemId = (const char*)json["systemId"];
+      }
+      Serial.println("phConfig file was successfully parsed");
+      
+      return true;
+    }
+
+      float upperLimit;
+      float lowerLimit;
 
       const char** getMessageDescriptions()
       {
@@ -272,11 +371,16 @@ class PHMeter:public OrderParameterMessage
           if (messageId == "GetpH")
           {
             setHasMessageToSend(true);  
+            lastBatchId = (const char*)getValue("BatchID");
+            writeConfig();
           }
           else if (messageId == "CalibrateHigh")
           {
             pHSensor.calibrationHigh(atof(getValue("SetpH")));
-            setHasMessageToSend(true);  
+            setHasMessageToSend(true);
+            lastBatchId = (const char*)getValue("BatchID");  
+            writeConfig();
+
             class PHCalibrationValue c= pHSensor.getCalibrationValue();
             c.saveToFile();
             pHSensor.initialize(c);
@@ -285,10 +389,25 @@ class PHMeter:public OrderParameterMessage
           {
             pHSensor.calibrationLow(atof(getValue("SetpH")));
             setHasMessageToSend(true);  
+            lastBatchId = (const char*)getValue("BatchID");
+            writeConfig();
+            
             class PHCalibrationValue c= pHSensor.getCalibrationValue();
             c.saveToFile();
             pHSensor.initialize(c);
           }
+          else if (messageId == "SetExceptionLimits")
+          {
+            upperLimit   = getValueFloat("UpperLimit");
+            lowerLimit   = getValueFloat("LowerLimit");
+            Serial.print("Got Exception limits: ");
+            Serial.print(lowerLimit);
+            Serial.print(" - ");
+            Serial.println(upperLimit);
+            writeConfig();
+          }
+
+
         }
         return success;
       }
@@ -306,6 +425,11 @@ class PHMeter:public OrderParameterMessage
           {
             ok =   getValue("BatchID") 
                 && getValue("SetpH");
+          }
+          else if (messageId == "SetExceptionLimits")
+          {
+            ok =   getValue("LowerLimit") 
+                && getValue("UpperLimit");
           }
           else
           {

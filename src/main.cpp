@@ -1,7 +1,5 @@
 //#define CORE_DEBUG_LEVEL ARDUHAL_LOG_LEVEL_DEBUG
 //#define DEBUG_ESP_HTTP_SERVER
-
-
 #include <fs.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
@@ -29,6 +27,7 @@
 #include "AnalogPHMeter.h"
 #include "roomlabel.h"
 #include "ph.h"
+#include "exceptionmessage.h"
 #include "QueueArray.h"
 /*
 #define XML  "application/xml\r\n"
@@ -73,6 +72,8 @@
 #ifndef LED_BUILTIN
   #define LED_BUILTIN 2
 #endif
+
+#define UTC_OFFSET -2 //hours
 
 #define LCDMAXCHARS 20
 #define SENSORREADINTERVAL     5000
@@ -123,6 +124,9 @@ bool setupComplete = false;
 
 unsigned long lastPasXInteraction = 0;
 unsigned long pasXWatchDogTime    = WATCHDOGTIME;
+String lastExceptionBatchID;
+unsigned long lastExceptionSent=0;
+const unsigned long exceptionSendInterval = 60000; //milliseconds
 
 String logString;
 bool logActive = false;
@@ -139,7 +143,7 @@ const char PROGMEM logFileName[]     = "/log.txt";
 const char PROGMEM receivedMessageFileName[] = "/receivedmessage.xml";
 const char PROGMEM sentMessageFileName[] = "/sentmessage.xml";
 
-const char PROGMEM pHCalibFileName[] = "/pHcalib.json";
+//const char PROGMEM pHCalibFileName[] = "/pHcalib.json";
 
 bool ledStatus = false;
 
@@ -238,6 +242,49 @@ String getDateTimeString(const RtcDateTime& dt)
             dt.Second() );
     //Serial.print(datestring);
     return (String(datestring));
+}
+
+String getUTCString(const RtcDateTime& dt)
+{
+    char datestring[24];
+
+    RtcDateTime UTC = dt;
+    UTC = UTC+ (UTC_OFFSET *60 *60);
+    int todo; // UTC offset summer/winter time
+
+    snprintf_P(datestring, 
+            countof(datestring),
+            PSTR("%04u-%02u-%02u %02u:%02u:%02u,000"),
+            UTC.Year(),
+            UTC.Month(),
+            UTC.Day(),
+            UTC.Hour(),
+            UTC.Minute(),
+            UTC.Second() );
+    //Serial.print(datestring);
+    return (String(datestring));
+}
+
+String getNow()
+{
+  RtcDateTime now;
+  if (rtcExists)
+  {
+     now = rtc.GetDateTime();
+  }
+  
+  return getDateTimeString(now);  
+}
+
+String getUTC()
+{
+  RtcDateTime now;
+  if (rtcExists)
+  {
+     now = rtc.GetDateTime();
+  }
+  
+  return getUTCString(now);  
 }
 
 void mylog(const char * text, bool forceWrite = false)
@@ -346,59 +393,51 @@ void getDeviceInfo(String& deviceInfo)
   deviceInfo += "</table>";
 }
 
-String getNow()
-{
-  RtcDateTime now;
-  if (rtcExists)
-  {
-     now = rtc.GetDateTime();
-  }
-  
-  return getDateTimeString(now);  
-}
+
 
 bool readSensor()
 {
   bool success = false;
- 
-  float temp(NAN), hum(NAN), pres(NAN);
-  
-  if (dhtExists)
+  if (myType == eRoomLabel)
   {
-    //mylog("dht:");
-    temp = dht.getTemperature();
-    hum  = dht.getHumidity();
+    float temp(NAN), hum(NAN), pres(NAN);
     
-    //mylog(dht.getStatusString());
-    
-  }
-  else if (bmeExists)
-  {
-      BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
-      BME280::PresUnit presUnit(BME280::PresUnit_hPa);
-    
-      bme.read(pres, temp, hum, tempUnit, presUnit);
-  }
-  else
-  {
-    return success;
-  }
-
-  // only take over plausible values
-  if (!isnan(temp) 
-   && !isnan(hum) 
-   && temp >-50.0 
-   && hum  >0.0)
-  {
-    temperature = temp;
-    humidity    = hum;
-    success = true;
-    if (!isnan(pres))
+    if (dhtExists)
     {
-      pressure = pres;
+      //mylog("dht:");
+      temp = dht.getTemperature();
+      hum  = dht.getHumidity();
+      
+      //mylog(dht.getStatusString());
+      
+    }
+    else if (bmeExists)
+    {
+        BME280::TempUnit tempUnit(BME280::TempUnit_Celsius);
+        BME280::PresUnit presUnit(BME280::PresUnit_hPa);
+      
+        bme.read(pres, temp, hum, tempUnit, presUnit);
+    }
+    else
+    {
+      return success;
+    }
+
+    // only take over plausible values
+    if (!isnan(temp) 
+    && !isnan(hum) 
+    && temp >-50.0 
+    && hum  >0.0)
+    {
+      temperature = temp;
+      humidity    = hum;
+      success = true;
+      if (!isnan(pres))
+      {
+        pressure = pres;
+      }
     }
   }
-  
   return success;
 }
 
@@ -481,22 +520,28 @@ void notFound()
 {
   bool foundValidURI = false;
 
-  for (int i=0; i<roomLabel.getMessageDescriptionCount(); i++)
+  if (myType == eRoomLabel)
   {
-    if (String(String("/")+roomLabel.getMessageDescriptionId(i)).equals(server.uri()))
+    for (int i=0; i<roomLabel.getMessageDescriptionCount(); i++)
     {
-      foundValidURI = true;
-      server.send(200, "text/xml", roomLabel.getMessageDescription(i));
-    }
-  }
-  if (!foundValidURI)
-  {
-    for (int i=0; i<pHMeter.getMessageDescriptionCount(); i++)
-    {
-      if (String(String("/")+pHMeter.getMessageDescriptionId(i)).equals(server.uri()))
+      if (String(String("/")+roomLabel.getMessageDescriptionId(i)).equals(server.uri()))
       {
         foundValidURI = true;
-        server.send(200, "text/xml", pHMeter.getMessageDescription(i));
+        server.send(200, "text/xml", roomLabel.getMessageDescription(i));
+      }
+    }
+  }
+  else if (myType == epH)
+  {
+    if (!foundValidURI)
+    {
+      for (int i=0; i<pHMeter.getMessageDescriptionCount(); i++)
+      {
+        if (String(String("/")+pHMeter.getMessageDescriptionId(i)).equals(server.uri()))
+        {
+          foundValidURI = true;
+          server.send(200, "text/xml", pHMeter.getMessageDescription(i));
+        }
       }
     }
   }
@@ -600,7 +645,7 @@ bool existsI2c(byte address)
   return false;
 }
 
-void scanI2c()
+int scanI2c()
 {
   byte  address;
   int nDevices;
@@ -619,6 +664,7 @@ void scanI2c()
     }
 
   }
+  return nDevices;
 }
 //const uint8_t  * font9 = u8g2_font_crox1h_tf;
 //const uint8_t  * font9 = u8g2_font_t0_11_tf; 
@@ -874,11 +920,13 @@ bool processMessage(const String& content, String & errorMessage)
 {   
   bool success = false;
   
-  String messageId = OrderParameterMessage::getMessageIdFromXml(content);
-  mylog(messageId);
-  if (messageId.length())
+  String localMessageId;
+  String localDeviceTypeId;
+  OrderParameterMessage::getMessageIdFromXml(content, localMessageId, localDeviceTypeId);
+  mylog(localMessageId);
+  if (localMessageId.length())
   {
-    if (roomLabel.hasThisMessageId(messageId.c_str()))
+    if (roomLabel.hasThisMessageId(localMessageId.c_str(), localDeviceTypeId.c_str()))
     {
       //Serial.print(" is a RoomLabel message, success:");
       success = roomLabel.parseXml(content, errorMessage);
@@ -907,7 +955,7 @@ bool processMessage(const String& content, String & errorMessage)
       }
 
     }
-    else if (pHMeter.hasThisMessageId(messageId.c_str()))
+    else if (pHMeter.hasThisMessageId(localMessageId.c_str(), localDeviceTypeId.c_str()))
     {
       success = pHMeter.parseXml(content, errorMessage);
       mylog("phMeter.parseXml:");
@@ -934,7 +982,7 @@ bool processMessage(const String& content, String & errorMessage)
     */
     else
     {
-      errorMessage = String("The message ID \"") + messageId +"\" is not supported by this device.";
+      errorMessage = String("The message ID \"") + localMessageId +"\" is not supported by this device.";
     }
 
     if (success)
@@ -987,6 +1035,7 @@ void readXmlFromFS()
 */
 
 unsigned long lastGetNextMessage = 0;
+unsigned long lastPostMessage = 0;
 
 void serverStart()
 {
@@ -1171,6 +1220,7 @@ void serverStart()
     {
       response = "<NoMessage/>";
     }
+    toggleLED();
     server.send(200, "application/XML", response);
     mylog(".");
     lastPasXInteraction = millis();
@@ -1181,7 +1231,11 @@ void serverStart()
   server.on("/PostMessage", HTTP_POST, [] () {
     unsigned long start = millis();
     String message = "PostMessage:";
-
+    mylog(String("\n")+getNow() + ": ");
+    mylog(start-lastPostMessage);
+    mylog("ms<->");
+    
+    lastPostMessage = start;
     //getServerRequest(message);
     Serial.println(message);
 
@@ -1434,10 +1488,19 @@ void setup()
  
   bool result = SPIFFS.begin();
   mylog(String(" SPIFFS opened: ") + String(result));
-    
-  Wire.begin(SDA_PIN,SCL_PIN);
+
+  Wire.begin(SCL_PIN, SDA_PIN);
   mylog("\n-- scanI2c --\n");
-  scanI2c();
+  int nDevices = scanI2c();
+
+  if (!nDevices)
+  {
+    mylog("no devices found, trying again with swapped pins...\n");
+    Wire.begin(SDA_PIN,SCL_PIN);
+    mylog("\n-- scanI2c --\n");
+    scanI2c();
+  }
+  
 
   RTCStart();
   bmeStart();
@@ -1503,13 +1566,17 @@ void loop()
   // waiting for PAS-X to start polling
   if (!setupComplete)
   {
-    if (lastGetNextMessage) // did PAS-X send a message?
+    if (lastGetNextMessage || lastPostMessage) // did PAS-X send a message?
     {
       setupComplete = true;
       if (myType == eRoomLabel)
       {
         roomLabel.readLcdFile();
         displayLcdScreen();
+      }
+      else if (myType == epH)
+      {
+        pHMeter.readConfig();
       }
     }
   }
@@ -1519,13 +1586,90 @@ void loop()
     {
 
       nextSensorRead = millis() + SENSORREADINTERVAL;
-      if (readSensor())
-      {
-        displayLcdScreen(); // #todo: necessary?
+
+      if (myType == eRoomLabel)
+      { 
+        if (readSensor()) // also reads pH
+        {
+          displayLcdScreen(); // #todo: necessary?
+        }
+        else if (dhtExists) // DHT sensor but no reading? Try again faster.
+        {
+          nextSensorRead = millis() + SENSORREADINTERVAL/10;
+        }
+
+
+        mylog(humidity);
+        mylog("RH, ");
+        mylog(temperature);
+        mylog("C\n");
+        if ((humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit)
+          ||(temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit))
+        {
+
+          String batchID = roomLabel.lastBatchId;
+          String PU      = roomLabel.lastPU;
+          mylog("Excpetion level reached\n");
+         
+          if (roomLabel.systemId.length() && (batchID != lastExceptionBatchID || (millis() - lastExceptionSent>exceptionSendInterval)))
+          {
+            lastExceptionSent = millis();
+            lastExceptionBatchID = batchID;
+            String timeStampString = getUTC();
+
+            String userDescription;
+            if (humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit)
+            { 
+              userDescription += "Humidity is outside the limit (" + String(roomLabel.rhLowerLimit) + "-" 
+                                + String(roomLabel.rhUpperLimit) + "RH%). Current humidity is " + String(humidity) + "RH%\n";
+            }
+
+            if (temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit)
+            {
+              userDescription += "Temperature is outside the limit (" + String(roomLabel.tempLowerLimit) + "-" 
+                               + String(roomLabel.tempUpperLimit) + "C). Current temperature is " + String(temperature) + "C";
+            }
+            String systemDesciption;
+            String exceptionMessage = ExceptionMessage::getExceptionMessageText(roomLabel.systemId.c_str(), 
+                                                                                "",//batchID.c_str(), 
+                                                                                PU.c_str(),
+                                                                                "System Description", 
+                                                                                userDescription.c_str(), 
+                                                                                timeStampString.c_str());
+            mylog(exceptionMessage);
+
+            sendQueue.push(exceptionMessage);
+          }
+        }
       }
-      else if (dhtExists) // DHT sensor but no reading? Try again faster.
+      else if (myType == epH)
       {
-        nextSensorRead = millis() + SENSORREADINTERVAL/10;
+        float pH = pHMeter.getpH();
+        mylog(pH);
+        mylog("pH\n");
+        if ( pHMeter.upperLimit > pHMeter.lowerLimit 
+        &&  (pH > pHMeter.upperLimit || pH<pHMeter.lowerLimit)
+        &&  (millis() - lastExceptionSent>exceptionSendInterval))
+        {
+            String batchID = pHMeter.lastBatchId;
+            lastExceptionSent = millis();
+            String timeStampString = getUTC();
+
+            String userDescription;
+            userDescription += "pH value is outside the limit (" + String(pHMeter.lowerLimit) + "-" 
+                              + String(pHMeter.upperLimit) + "pH). Current pH is " + String(pH) + "pH\n";
+            String systemDesciption;
+            String exceptionMessage = ExceptionMessage::getExceptionMessageText(pHMeter.systemId.c_str(), 
+                                                                                batchID.c_str(), 
+                                                                                "",//PU.c_str(),
+                                                                                "System Description", 
+                                                                                userDescription.c_str(), 
+                                                                                timeStampString.c_str());
+            mylog(exceptionMessage);
+
+            sendQueue.push(exceptionMessage);
+        }
+
       }
     }
 
@@ -1564,8 +1708,6 @@ void loop()
     WiFi.reconnect();
     mylog("reconnected!\n");
   }
-  toggleLED();
-  delay(18);
   server.handleClient();
 }
 

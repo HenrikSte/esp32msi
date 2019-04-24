@@ -6,7 +6,7 @@
 #include <ArduinoJson.h>
 #include "orderparametermessage.h"
 
-const char PROGMEM pHFileName[]  = "/pH.json";
+const char PROGMEM pHCalibFileName[]  = "/pH.json";
 
 
 
@@ -18,6 +18,11 @@ class PHCalibrationValue
     int adc[2];
     float slope;
     int adcOffset;
+
+    // limits for creating an exception
+  
+
+
     void saveToFile()
     {
           DynamicJsonBuffer jsonBuffer;
@@ -32,13 +37,13 @@ class PHCalibrationValue
           json["adcOffset"] = adcOffset;
 
           json.prettyPrintTo(Serial);
-          OrderParameterMessage::writeJsonFile(pHFileName, json);    
+          OrderParameterMessage::writeJsonFile(pHCalibFileName, json);    
     }
 
     bool readFromFile()
     {
       SPIFFS.begin(); 
-      File f = SPIFFS.open(pHFileName, "r");
+      File f = SPIFFS.open(pHCalibFileName, "r");
       
       if (!f) 
       {
@@ -58,7 +63,7 @@ class PHCalibrationValue
         if (!json.success()) 
         {
           Serial.print("JSON parseObject() failed:");
-          Serial.println(pHFileName);
+          Serial.println(pHCalibFileName);
 
           return false;
         }
@@ -70,6 +75,7 @@ class PHCalibrationValue
         adc[1]    = json["adc1"];
         slope     = json["slope"];
         adcOffset = json["adcOffset"];
+
       }
       Serial.println("\nLcd file was successfully parsed");
       return true;

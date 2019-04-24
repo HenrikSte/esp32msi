@@ -311,6 +311,65 @@ const char PROGMEM  RL_MDRoomLabelOff[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                 "</attachment>"
                             "</MsiInterfaceDescription>";
 
+const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+                                "<messageId>SetExceptionLimits</messageId>"
+                                "<supplierId>Werum</supplierId>"
+                                "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
+                                "<description>Set the limits for RH and temp to create exceptions</description>"
+                                "<supplierVersion>1.1</supplierVersion>"
+                                "<systemId>Display_252_System</systemId>"
+                                "<creationTime>2018-05-03 13:05:00,000</creationTime>"
+                                "<parameter>"
+                                    "<name>TempUpperLimit</name>"
+                                    "<description>Temperature upper limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>100</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>C</uom>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>RHUpperLimit</name>"
+                                    "<description>Humidity upper limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>100</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>RH%</uom>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>TempLowerLimit</name>"
+                                    "<description>Temperature lower limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>100</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>C</uom>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>RHLowerLimit</name>"
+                                    "<description>Humidity lower limit</description>"
+                                    "<dataType>Double</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                    "<isMesQualifier>false</isMesQualifier>"
+                                    "<isSfQualifier>false</isSfQualifier>"
+                                    "<definitionRange>"
+                                        "<fromValue>0</fromValue>"
+                                        "<toValue>100</toValue>"
+                                    "</definitionRange>"
+                                    "<uom>RH%</uom>"
+                                "</parameter>"
+                                "<attachment>"
+                                "</attachment>"
+                            "</MsiInterfaceDescription>";
+
 const char PROGMEM  responseShowOrderInfo[] ="<?xml version=\"1.0\"\?>"
                             "<MsiMessageContainer xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
                             "<messageInstanceId>"
@@ -591,13 +650,13 @@ const char PROGMEM  responseGetEnvironmantalData2[] ="<?xml version=\"1.0\"\?>"
                                 "</message>"
                             "</MsiMessageContainer>";
 
-#define MESSAGEDESCRIPTIONCOUNT 4
+#define MESSAGEDESCRIPTIONCOUNT 5
 
-const char * messageDescriptionV1[]       = {RL_MDGetEnvironmentalData,    RL_MDShowOrderInfo,    RL_MDRoomLabelOff, RL_MDShowInfo};
-const char * messageDescriptionV2[]       = {RL_MDGetEnvironmentalData2,   RL_MDShowOrderInfo2,   RL_MDRoomLabelOff, RL_MDShowInfo};
-const char * messageDescriptionTextV1[] = { "GetEnvironmentalData (1.0)",  "ShowOrderInfo (1.0)", "RoomLabelOff", "ShowInfo"};
-const char * messageDescriptionTextV2[] = { "GetEnvironmentalData (2.0)",  "ShowOrderInfo (2.0)", "RoomLabelOff", "ShowInfo"};
-const char * messageDescriptionId[]     = { "GetEnvironmentalData",        "ShowOrderInfo",       "RoomLabelOff", "ShowInfo"};
+const char * messageDescriptionV1[]       = {RL_MDGetEnvironmentalData,    RL_MDShowOrderInfo,    RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits};
+const char * messageDescriptionV2[]       = {RL_MDGetEnvironmentalData2,   RL_MDShowOrderInfo2,   RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits};
+const char * messageDescriptionTextV1[] = { "GetEnvironmentalData (1.0)",  "ShowOrderInfo (1.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
+const char * messageDescriptionTextV2[] = { "GetEnvironmentalData (2.0)",  "ShowOrderInfo (2.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
+const char * messageDescriptionId[]     = { "GetEnvironmentalData",        "ShowOrderInfo",       "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
 
 class RoomLabel:public OrderParameterMessage
 {
@@ -605,6 +664,7 @@ class RoomLabel:public OrderParameterMessage
       RoomLabel(int _lcdMaxChars)
       :OrderParameterMessage()
       {
+        myDeviceTypeId ="ESP_Roomlabel";
         lcdMaxChars = _lcdMaxChars;
         version = 1;
       }
@@ -677,6 +737,9 @@ class RoomLabel:public OrderParameterMessage
             line2 = makeLCDLine(getParameter("Process"), "");
             line3 = makeLCDLine(getParameter("Mat"),     "Mat: ");
             line4 = makeLCDLine(getParameter("BatchID"), "Batch: ");
+            lastBatchId = (const char*)getValue("BatchID");
+            lastPU      = (const char*)getValue("PU");
+
             writeLcdFile();
 
           }
@@ -707,6 +770,16 @@ class RoomLabel:public OrderParameterMessage
             writeLcdFile();
 
           }
+          else if (messageId == "SetExceptionLimits")
+          {
+            setHasMessageToSend(false); 
+            
+            tempUpperLimit = getValueFloat("TempUpperLimit");
+            tempLowerLimit = getValueFloat("TempLowerLimit");
+            rhUpperLimit   = getValueFloat("RHUpperLimit");
+            rhLowerLimit   = getValueFloat("RHLowerLimit");
+            writeLcdFile();
+          }
         }
 
         return success;
@@ -720,7 +793,7 @@ class RoomLabel:public OrderParameterMessage
           if (messageId == "ShowOrderInfo")
           {
               ok =   getValue("BatchID")
-                  && getValue("SFO")
+                  && getValue("Mat")
                   && getValue("Process")
                   && getValue("PU");
 
@@ -739,6 +812,13 @@ class RoomLabel:public OrderParameterMessage
           else if (messageId == "RoomLabelOff")
           {
               ok = getValue("BatchID");
+          }
+          else if (messageId == "SetExceptionLimits")
+          {
+              ok = getValue("TempUpperLimit")
+              &&   getValue("TempLowerLimit")
+              &&   getValue("RHUpperLimit")
+              &&   getValue("RHLowerLimit");
           }
         }
         
@@ -873,6 +953,16 @@ class RoomLabel:public OrderParameterMessage
           line3 = (const char*)json["line3"];
           line4 = (const char*)json["line4"];
           enabled = (bool) json["enable"];
+          tempUpperLimit = (float)json["TempUpperLimit"];
+          tempLowerLimit = (float)json["TempLowerLimit"];
+          rhUpperLimit   = (float)json["RHUpperLimit"];
+          rhLowerLimit   = (float)json["RHLowerLimit"];
+
+          lastBatchId = (const char*)json["BatchID"];
+          lastPU      = (const char*)json["PU"];
+
+          systemId = (const char*)json["systemId"];
+
           
         }
         Serial.println("\nLcd file was successfully parsed");
@@ -890,15 +980,29 @@ class RoomLabel:public OrderParameterMessage
         json["line3"] = line3;
         json["line4"] = line4;
         json["enable"] = enabled;
+        json["BatchID"]  = lastBatchId;
+        json["PU"]       = lastPU;
+        json["systemId"] = systemId;
+        json["TempUpperLimit"] = tempUpperLimit;
+        json["TempLowerLimit"] = tempLowerLimit;
+        json["RHUpperLimit"]   = rhUpperLimit;
+        json["RHLowerLimit"]   = rhLowerLimit;
 
         writeJsonFile(lcdFileName, json);
       }  
+
+      float tempUpperLimit;
+      float tempLowerLimit;
+      float rhUpperLimit;
+      float rhLowerLimit;
+
 
     protected:
       String nextMessageString;
       int version;
       int lcdMaxChars;
       bool enabled;
+
 
       String line1;
       String line2;
