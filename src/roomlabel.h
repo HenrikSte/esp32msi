@@ -11,6 +11,7 @@ const char PROGMEM lcdFileName[]  = "/lcd.json";
 #define RL_PRESSURE            "{{Pressure}}"
 
 
+
 const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                                 "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
                                 "<messageId>ShowOrderInfo</messageId>"
@@ -18,7 +19,9 @@ const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Show order information and receive tmp and rh</description>"
                                 "<supplierVersion>1.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>PU</name>"
@@ -89,7 +92,9 @@ const char PROGMEM  RL_MDShowOrderInfo2[] ="<?xml version=\"1.0\" encoding=\"UTF
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Show order information and receive tmp, rh and pressure</description>"
                                 "<supplierVersion>2.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>PU</name>"
@@ -157,7 +162,9 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Set room label with 4 lines of free text</description>"
                                 "<supplierVersion>1.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>Line1</name>"
@@ -202,7 +209,9 @@ const char PROGMEM  RL_MDGetEnvironmentalData[] ="<?xml version=\"1.0\" encoding
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Receive tmp and rh</description>"
                                 "<supplierVersion>1.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>BatchID</name>"
@@ -247,7 +256,9 @@ const char PROGMEM  RL_MDGetEnvironmentalData2[] ="<?xml version=\"1.0\" encodin
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Receive tmp, rh and pressure</description>"
                                 "<supplierVersion>2.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>BatchID</name>"
@@ -297,7 +308,9 @@ const char PROGMEM  RL_MDRoomLabelOff[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Switch off the room label</description>"
                                 "<supplierVersion>1.0</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>BatchID</name>"
@@ -311,6 +324,7 @@ const char PROGMEM  RL_MDRoomLabelOff[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                 "</attachment>"
                             "</MsiInterfaceDescription>";
 
+
 const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
                                 "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
                                 "<messageId>SetExceptionLimits</messageId>"
@@ -318,7 +332,9 @@ const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Set the limits for RH and temp to create exceptions</description>"
                                 "<supplierVersion>1.1</supplierVersion>"
-                                "<systemId>Display_252_System</systemId>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
                                 "<creationTime>2018-05-03 13:05:00,000</creationTime>"
                                 "<parameter>"
                                     "<name>TempUpperLimit</name>"
@@ -684,7 +700,7 @@ class RoomLabel:public OrderParameterMessage
         //Serial.print("RoomLabel.getMessageDescriptions");
         if (version==1)
         {
-          return messageDescriptionV1;
+          return messageDescriptionV1; 
         }
         else
         {
@@ -947,7 +963,7 @@ class RoomLabel:public OrderParameterMessage
             Serial.println(lcdFileName);
             return false;
           }
-          json.printTo(Serial);
+          json.prettyPrintTo(Serial);
           line1 = (const char*)json["line1"];
           line2 = (const char*)json["line2"];
           line3 = (const char*)json["line3"];

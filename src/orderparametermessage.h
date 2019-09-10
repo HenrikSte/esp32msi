@@ -100,8 +100,7 @@ class OrderParameterMessage
           }
 
           json.prettyPrintTo(Serial);
-
-          json.printTo(f);
+          json.prettyPrintTo(f);
           f.close();
 
           Serial.println(" json file was successfully saved");

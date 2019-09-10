@@ -3,8 +3,8 @@
 #include <fs.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
-#include <DNSServer.h>
-#include <WiFiManager.h>         
+//#include <DNSServer.h>
+//#include <WiFiManager.h>         
 //#include "SSD1306.h"
 //#include "SSD1306Wire.h" // legacy include: `#include "SSD1306.h"`
 #include <U8g2lib.h>
@@ -19,7 +19,7 @@
 //#include <Hash.h>
 //#include <ESPAsyncWebServer.h>
 
-#include <ESP8266TrueRandom.h>
+#include <ESP8266TrueRandom.h> 
 
 #include <tinyxml2.h>
 
@@ -29,6 +29,9 @@
 #include "ph.h"
 #include "exceptionmessage.h"
 #include "QueueArray.h"
+
+#include "myAutoConnect.h"
+
 /*
 #define XML  "application/xml\r\n"
 #define JSON "application/json\r\n"
@@ -110,6 +113,9 @@ bool rtcExists = false;
 bool bmeExists = false;
 bool dhtExists = false;
 bool pHExists  = false;
+bool Lcd1Exists = false;
+bool Lcd2Exists = false;
+bool OledExists  = false;
 
 enum eTypeOfDevice {eUnknown, 
                     eRoomLabel,
@@ -219,6 +225,9 @@ const char PROGMEM mainPage[]  =
          "<p><a href=\"/deactivatelog\">deactivate log</a></p>"
          "<p><a href=\"/watchdog\">activate watchdog</a></p>"
          "<p><a href=\"/nowatchdog\">deactivate watchdog</a></p>"
+         "<p><a href=\"/configfile\">config file</a></p>"
+         "<p><a href=\"/phcalibfile\">pH Calibration file</a></p>"
+         "<p><a href=\"/lcdfile\">lcd file</a></p>"
          "<p><h2>Device Info</h2>"
          DEVICEINFO
          "</body></html>"
@@ -250,7 +259,7 @@ String getUTCString(const RtcDateTime& dt)
 
     RtcDateTime UTC = dt;
     UTC = UTC+ (UTC_OFFSET *60 *60);
-    int todo; // UTC offset summer/winter time
+    
 
     snprintf_P(datestring, 
             countof(datestring),
@@ -374,6 +383,9 @@ void getDeviceInfo(String& deviceInfo)
   addTableRow(deviceInfo, "BME280",           bmeExists ? "yes":"no");
   addTableRow(deviceInfo, "DHT22",            dhtExists ? "yes":"no");
   addTableRow(deviceInfo, "ph Sensor",        pHExists  ? "yes":"no");
+  addTableRow(deviceInfo, "LCD 1 (0x3F)",     Lcd1Exists ? "yes":"no");
+  addTableRow(deviceInfo, "LCD 2 (0x27)",     Lcd2Exists ? "yes":"no");
+  addTableRow(deviceInfo, "OLED",             OledExists  ? "yes":"no");
   addTableRow(deviceInfo, "Free heap",        String(ESP.getFreeHeap()).c_str());
   addTableRow(deviceInfo, "CPU Speed (MHz)",  String(ESP.getCpuFreqMHz()).c_str());
   addTableRow(deviceInfo, "Host name",        WiFi.getHostname());
@@ -520,14 +532,22 @@ void notFound()
 {
   bool foundValidURI = false;
 
+  String messageDescription;
+  String systemId;
+
   if (myType == eRoomLabel)
   {
+    systemId="Display_" OP_SYSTEMID "_System"; 
+    systemId.replace(OP_SYSTEMID,String(WiFi.localIP()[3]));
     for (int i=0; i<roomLabel.getMessageDescriptionCount(); i++)
     {
       if (String(String("/")+roomLabel.getMessageDescriptionId(i)).equals(server.uri()))
       {
         foundValidURI = true;
-        server.send(200, "text/xml", roomLabel.getMessageDescription(i));
+        messageDescription = roomLabel.getMessageDescription(i);
+        messageDescription.replace(OP_SYSTEMID,systemId);
+
+        server.send(200, "text/xml", messageDescription.c_str());
       }
     }
   }
@@ -535,12 +555,17 @@ void notFound()
   {
     if (!foundValidURI)
     {
+      systemId="pH_" OP_SYSTEMID "_System"; 
+      systemId.replace(OP_SYSTEMID,String(WiFi.localIP()[3]));
       for (int i=0; i<pHMeter.getMessageDescriptionCount(); i++)
       {
         if (String(String("/")+pHMeter.getMessageDescriptionId(i)).equals(server.uri()))
         {
           foundValidURI = true;
-          server.send(200, "text/xml", pHMeter.getMessageDescription(i));
+          messageDescription = pHMeter.getMessageDescription(i);
+          messageDescription.replace(OP_SYSTEMID,systemId);
+
+          server.send(200, "text/xml", messageDescription.c_str());
         }
       }
     }
@@ -583,7 +608,7 @@ bool readConfigFile()
       mylog("JSON parseObject() failed\n");
       return false;
     }
-    json.printTo(Serial);
+    json.prettyPrintTo(Serial);
 
     if (json.containsKey("ip")) 
     {
@@ -619,7 +644,7 @@ bool writeConfigFile()
     
   return OrderParameterMessage::writeJsonFile(configFileName, json);
 }
-
+  
 bool existsI2c(byte address)
 {
   byte error;
@@ -762,10 +787,10 @@ void blinkLcdScreen(unsigned long ms)
   displayLcd->backlight();
 }
 
-void displayLcdScreen(String& line1, 
-                      String& line2, 
-                      String& line3, 
-                      String& line4, 
+void displayLcdScreen(const String& line1, 
+                      const String& line2, 
+                      const String& line3, 
+                      const String& line4, 
                       bool enabled)
 {
     displayLcd->setCursor(0,0);
@@ -824,6 +849,9 @@ void displayLcdScreen(const char * SSID = NULL, const char * IP=NULL, const char
 }
 
 
+int todo2; // show "connecting"
+
+/*
 void wifiManagerConnectCallback (WiFiManager *myWiFiManager) 
 {
   mylog("\nwifiManagerConnectCallback: ");
@@ -841,14 +869,18 @@ void wifiManagerConnectCallback (WiFiManager *myWiFiManager)
   mylog(myWiFiManager->getIp().toString());
   mylog("\n");
 }
+*/
 
 
-void wifiManagerConfigModeCallback (WiFiManager *myWiFiManager) 
+bool onConfigMode(IPAddress softapip) 
 {
-  mylog("wifiManagerConfigModeCallback: ");
+  mylog("onConfigMode: ");
   displayLcdScreen(ApSsid, ApIp, ApInfoText);
   displayOledScreen(ApSsid, ApIp, ApInfoText);
+  return true;
 }
+
+/*
 
 void wifiManagerSaveConfigCallback () 
 {
@@ -859,8 +891,12 @@ void wifiManagerSaveConfigCallback ()
   writeConfigFile();
 }
 
+*/
+
 void wifiStart()
   {
+    bool forcePortal = false;
+    /*
     WiFiManager WifiManager;
     
     WifiManager.setConnectCallback(wifiManagerConnectCallback);
@@ -876,19 +912,16 @@ void wifiStart()
     _gw.fromString(staticGateway);
     _sn.fromString(staticSubnetMask); 
     WifiManager.setSTAStaticIPConfig(_ip, _gw, _sn);
+*/
   
-    String hostName = String(F("MSI")) + String((unsigned long)ESP.getEfuseMac()); 
-    WiFi.setHostname(hostName.c_str());
-
 
     if (digitalRead(TRIGGER_PIN1) == LOW)
     {
-      WifiManager.resetSettings();
       mylog("Forcing ConfigPortal\n");
-      WifiManager.startConfigPortal(ApSsid);
+      forcePortal = true;
     }  
 
-
+/*
     do
     {
       WifiManager.autoConnect(ApSsid); 
@@ -901,7 +934,18 @@ void wifiStart()
       }
     }
     while (!WiFi.isConnected());
+ */
 
+    if (!autoConnectWifi(onConfigMode, forcePortal, ApSsid))
+    {
+      ESP.restart();
+    }
+
+
+
+    Serial.println("back from  autoconnect");
+
+    String hostName = String(F("MSI")) + String((unsigned long)ESP.getEfuseMac()); 
 
     mylog("MySSID:");
     mylog(WiFi.SSID());
@@ -1093,6 +1137,62 @@ void serverStart()
       server.send(200, "text/PLAIN", "log deactivated");
   });
 
+  server.on("/configfile", HTTP_GET, [](){
+      unsigned long start = millis();
+      mylog("configfile", true);
+
+      File f = SPIFFS.open(configFileName, "r");
+      if (!f || f.size()==0) 
+      {
+        Serial.println("configfile not found");
+        server.send(404, "text/PLAIN", "configfile not found");
+      } 
+      else 
+      {
+        server.streamFile(f, "text/PLAIN");
+      }
+      
+      mylog(millis()-start);
+      mylog("ms\n");
+  });
+
+  server.on("/phcalibfile", HTTP_GET, [](){
+      unsigned long start = millis();
+      mylog("configfile", true);
+
+      File f = SPIFFS.open(pHCalibFileName, "r");
+      if (!f || f.size()==0) 
+      {
+        Serial.println("pHCalibFile not found");
+        server.send(404, "text/PLAIN", "pHCalibFile not found");
+      } 
+      else 
+      {
+        server.streamFile(f, "text/PLAIN");
+      }
+      
+      mylog(millis()-start);
+      mylog("ms\n");
+  });
+
+  server.on("/lcdfile", HTTP_GET, [](){
+      unsigned long start = millis();
+      mylog("lcdfile", true);
+
+      File f = SPIFFS.open(lcdFileName, "r");
+      if (!f || f.size()==0) 
+      {
+        Serial.println("lcdFile not found");
+        server.send(404, "text/PLAIN", "lcdFile not found");
+      } 
+      else 
+      {
+        server.streamFile(f, "text/PLAIN");
+      }
+      
+      mylog(millis()-start);
+      mylog("ms\n");
+  });
 
   server.on("/log", HTTP_GET, [](){
       unsigned long start = millis();
@@ -1299,6 +1399,8 @@ void oledStart()
 
   if (existsI2c(ADDRESS_OLED) && !displayOled)
   {
+    OledExists=true;
+
     //displayOled = new SSD1306Wire(ADDRESS_OLED, SDA_PIN, SCL_PIN);    
     displayOled = new U8G2_SH1106_128X64_NONAME_F_HW_I2C(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
     // set default font
@@ -1319,11 +1421,13 @@ void lcdStart()
   {
     if (existsI2c(ADDRESS_LCD1))
     {
+      Lcd1Exists=true;
       mylog("Using LCD 1\n");
       displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD1,LCDMAXCHARS,4);
     }
     else if (existsI2c(ADDRESS_LCD2))
     {
+      Lcd2Exists=true;
       mylog("Using LCD 2\n");
       displayLcd = new LiquidCrystal_I2C(ADDRESS_LCD2,LCDMAXCHARS,4);
     }
@@ -1568,6 +1672,7 @@ void loop()
   {
     if (lastGetNextMessage || lastPostMessage) // did PAS-X send a message?
     {
+      mylog("Setup complete!\n");
       setupComplete = true;
       if (myType == eRoomLabel)
       {
@@ -1577,6 +1682,10 @@ void loop()
       else if (myType == epH)
       {
         pHMeter.readConfig();
+      }
+      else // don't know who I am... :(
+      {
+        displayLcdScreen((String)"", (String)"", (String)"", "No sensor found!    ", true);
       }
     }
   }
@@ -1603,13 +1712,16 @@ void loop()
         mylog("RH, ");
         mylog(temperature);
         mylog("C\n");
-        if ((humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit)
-          ||(temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit))
+        if ((!(roomLabel.rhUpperLimit==0 && roomLabel.rhLowerLimit==0) //ignore if both limits are 0.0
+        &&  (humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit))
+          ||
+          (!(roomLabel.tempUpperLimit==0 && roomLabel.tempLowerLimit==0) //ignore if both limits are 0.0
+        &&  (temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit)))
         {
 
           String batchID = roomLabel.lastBatchId;
           String PU      = roomLabel.lastPU;
-          mylog("Excpetion level reached\n");
+          mylog("Exception level reached\n");
          
           if (roomLabel.systemId.length() && (batchID != lastExceptionBatchID || (millis() - lastExceptionSent>exceptionSendInterval)))
           {
@@ -1618,16 +1730,21 @@ void loop()
             String timeStampString = getUTC();
 
             String userDescription;
-            if (humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit)
-            { 
-              userDescription += "Humidity is outside the limit (" + String(roomLabel.rhLowerLimit) + "-" 
-                                + String(roomLabel.rhUpperLimit) + "RH%). Current humidity is " + String(humidity) + "RH%\n";
-            }
-
-            if (temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit)
+            if (!(roomLabel.rhUpperLimit==0 && roomLabel.rhLowerLimit==0))
             {
-              userDescription += "Temperature is outside the limit (" + String(roomLabel.tempLowerLimit) + "-" 
-                               + String(roomLabel.tempUpperLimit) + "C). Current temperature is " + String(temperature) + "C";
+              if (humidity > roomLabel.rhUpperLimit || humidity<roomLabel.rhLowerLimit)
+              { 
+                userDescription += "Humidity is outside the limit (" + String(roomLabel.rhLowerLimit) + "-" 
+                                  + String(roomLabel.rhUpperLimit) + "RH%). Current humidity is " + String(humidity) + "RH%\n";
+              }
+            }
+            if (!(roomLabel.tempUpperLimit==0 && roomLabel.tempLowerLimit==0))
+            {
+              if (temperature > roomLabel.tempUpperLimit || temperature<roomLabel.tempLowerLimit)
+              {
+                userDescription += "Temperature is outside the limit (" + String(roomLabel.tempLowerLimit) + "-" 
+                                + String(roomLabel.tempUpperLimit) + "C). Current temperature is " + String(temperature) + "C";
+              }
             }
             String systemDesciption;
             String exceptionMessage = ExceptionMessage::getExceptionMessageText(roomLabel.systemId.c_str(), 
@@ -1704,9 +1821,16 @@ void loop()
   // Check if WLAN is connected
   if (WiFi.status() != WL_CONNECTED)
   {   
-    mylog("reconnecting...");
+    mylog("reconnecting...\n");
     WiFi.reconnect();
-    mylog("reconnected!\n");
+    if (WiFi.status() == WL_CONNECTED)
+    {
+      mylog("reconnected!\n");
+    }
+    else
+    {
+      delay(250);
+    }
   }
   server.handleClient();
 }
