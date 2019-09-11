@@ -1,0 +1,27 @@
+{
+    "name": "ESP8266TrueRandom", 
+    "repository": {
+        "url": "https://github.com/marvinroger/ESP8266TrueRandom.git", 
+        "type": "git"
+    }, 
+    "platforms": [
+        "espressif8266"
+    ], 
+    "frameworks": [
+        "arduino"
+    ], 
+    "version": "1.0", 
+    "authors": [
+        {
+            "maintainer": false, 
+            "name": "Marvin Roger", 
+            "url": "https://github.com/marvinroger", 
+            "email": null
+        }
+    ], 
+    "keywords": [
+        "ramdom"
+    ], 
+    "id": 1477, 
+    "description": "TrueRandom Arduino library for the ESP8266"
+}
