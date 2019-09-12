@@ -1,4 +1,5 @@
 EESchema Schematic File Version 4
+LIBS:esp32roomlabel-cache
 EELAYER 26 0
 EELAYER END
 $Descr A4 11693 8268
@@ -19,7 +20,7 @@ U 1 1 5CB03136
 P 4850 3300
 F 0 "U1" H 4850 4467 50  0001 C CNN
 F 1 "NODEMCU ESP32" H 4850 4375 50  0000 C CNN
-F 2 "ESP32-DEVKITC-32D:MODULE_ESP32-DEVKITC-32D" H 4850 3300 50  0001 L BNN
+F 2 "ESP32-DEVKIT:MODULE_ESP32-DEVKITC-32D" H 4850 3300 50  0001 L BNN
 F 3 "Unavailable" H 4850 3300 50  0001 L BNN
 F 4 "Espressif Systems" H 4850 3300 50  0001 L BNN "Feld4"
 F 5 "Eval Board For Esp-Wroom-32" H 4850 3300 50  0001 L BNN "Feld5"
@@ -43,9 +44,9 @@ Wire Wire Line
 	3850 4200 4050 4200
 Wire Wire Line
 	5650 3000 5800 3000
-Text GLabel 5800 3100 2    50   Input ~ 0
-CLK
 Text GLabel 5800 3200 2    50   Input ~ 0
+CLK
+Text GLabel 5800 3100 2    50   Input ~ 0
 DTA
 Wire Wire Line
 	5800 3100 5650 3100
@@ -271,7 +272,7 @@ L Connector:Conn_01x04_Male J8
 U 1 1 5CB1EC59
 P 1550 5750
 F 0 "J8" H 1656 6028 50  0000 C CNN
-F 1 "MISC" H 1656 5937 50  0000 C CNN
+F 1 "I2C" H 1656 5937 50  0000 C CNN
 F 2 "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical" H 1550 5750 50  0001 C CNN
 F 3 "~" H 1550 5750 50  0001 C CNN
 	1    1550 5750
@@ -295,4 +296,86 @@ Wire Wire Line
 	2000 5650 1750 5650
 Wire Wire Line
 	3850 3700 4050 3700
+$Comp
+L Connector:Conn_01x04_Male J10
+U 1 1 5D7A29E7
+P 1550 6400
+F 0 "J10" H 1656 6678 50  0000 C CNN
+F 1 "Analog" H 1656 6587 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical" H 1550 6400 50  0001 C CNN
+F 3 "~" H 1550 6400 50  0001 C CNN
+	1    1550 6400
+	1    0    0    -1  
+$EndComp
+Text GLabel 2000 6300 2    50   Input ~ 0
+3V3
+Text GLabel 2000 6400 2    50   Input ~ 0
+GND
+Text GLabel 2000 6500 2    50   Input ~ 0
+5V
+Text GLabel 2000 6600 2    50   Input ~ 0
+AnalogIn
+Wire Wire Line
+	2000 6600 1750 6600
+Wire Wire Line
+	1750 6500 2000 6500
+Wire Wire Line
+	2000 6400 1750 6400
+Wire Wire Line
+	2000 6300 1750 6300
+Text GLabel 5850 4100 2    50   Input ~ 0
+AnalogIn
+Wire Wire Line
+	5650 4100 5850 4100
+Text GLabel 2000 7150 2    50   Input ~ 0
+GPIO14
+Text GLabel 2000 7250 2    50   Input ~ 0
+GPIO15
+Text GLabel 2000 7050 2    50   Input ~ 0
+GPIO13
+Text GLabel 5750 3900 2    50   Input ~ 0
+GPIO15
+Wire Wire Line
+	3850 3500 4050 3500
+Wire Wire Line
+	3850 3600 4050 3600
+Wire Wire Line
+	3850 3800 4050 3800
+Wire Wire Line
+	5650 3900 5750 3900
+$Comp
+L Connector:Conn_01x06_Male J11
+U 1 1 5D7A9346
+P 1550 7150
+F 0 "J11" H 1656 7528 50  0000 C CNN
+F 1 "GPIO" H 1656 7437 50  0000 C CNN
+F 2 "Connector_PinHeader_2.54mm:PinHeader_1x06_P2.54mm_Vertical" H 1550 7150 50  0001 C CNN
+F 3 "~" H 1550 7150 50  0001 C CNN
+	1    1550 7150
+	1    0    0    -1  
+$EndComp
+Text GLabel 2000 6950 2    50   Input ~ 0
+GPIO12
+Text GLabel 3850 3600 0    50   Input ~ 0
+GPIO12
+Text GLabel 3850 3800 0    50   Input ~ 0
+GPIO13
+Text GLabel 3850 3500 0    50   Input ~ 0
+GPIO14
+Text GLabel 2000 7350 2    50   Input ~ 0
+3V3
+Text GLabel 2000 7450 2    50   Input ~ 0
+GND
+Wire Wire Line
+	1750 7450 2000 7450
+Wire Wire Line
+	1750 7350 2000 7350
+Wire Wire Line
+	1750 7250 2000 7250
+Wire Wire Line
+	1750 7150 2000 7150
+Wire Wire Line
+	1750 7050 2000 7050
+Wire Wire Line
+	1750 6950 2000 6950
 $EndSCHEMATC
