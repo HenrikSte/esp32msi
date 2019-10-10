@@ -1589,9 +1589,13 @@ void setup()
   pinMode(TRIGGER_PIN1, INPUT_PULLUP);           // set pin to input
   pinMode(TRIGGER_PIN2, INPUT_PULLUP);           // set pin to input
       
- 
+
   bool result = SPIFFS.begin();
-  mylog(String(" SPIFFS opened: ") + String(result));
+  mylog(String(" SPIFFS opened: ") + String(result) + "\n");
+
+  mylog(WiFi.macAddress().c_str());
+  mylog("\n");
+
 
   Wire.begin(SCL_PIN, SDA_PIN);
   mylog("\n-- scanI2c --\n");
@@ -1750,10 +1754,16 @@ void loop()
             String exceptionMessage = ExceptionMessage::getExceptionMessageText(roomLabel.systemId.c_str(), 
                                                                                 "",//batchID.c_str(), 
                                                                                 PU.c_str(),
-                                                                                "System Description", 
+                                                                                "Sensor data outside of limits", 
                                                                                 userDescription.c_str(), 
                                                                                 timeStampString.c_str());
             mylog(exceptionMessage);
+            if (displayLcd)
+            {
+              displayLcd->setBacklight(!roomLabel.getEnabled());
+              delay(100);
+              displayLcd->setBacklight(roomLabel.getEnabled());
+            }
 
             sendQueue.push(exceptionMessage);
           }

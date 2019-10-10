@@ -245,7 +245,7 @@ bool autoConnectWifi(AutoConnect::DetectExit_ft onDetect, bool forcePortal, cons
   }
 
   // Establish a connection with an autoReconnect option.
-  if (Portal. begin(NULL,NULL,10000)) {
+  if (Portal. begin(NULL,NULL,100000)) {
     success = true;
     Serial.println("WiFi connected: " + WiFi.localIP().toString());
   }

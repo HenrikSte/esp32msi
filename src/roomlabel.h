@@ -18,7 +18,7 @@ const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Show order information and receive tmp and rh</description>"
-                                "<supplierVersion>1.0</supplierVersion>"
+                                "<supplierVersion>1.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -30,6 +30,7 @@ const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>false</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>Mat</name>"
@@ -38,6 +39,7 @@ const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>Process</name>"
@@ -46,6 +48,7 @@ const char PROGMEM  RL_MDShowOrderInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>BatchID</name>"
@@ -91,7 +94,7 @@ const char PROGMEM  RL_MDShowOrderInfo2[] ="<?xml version=\"1.0\" encoding=\"UTF
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Show order information and receive tmp, rh and pressure</description>"
-                                "<supplierVersion>2.0</supplierVersion>"
+                                "<supplierVersion>2.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -101,18 +104,21 @@ const char PROGMEM  RL_MDShowOrderInfo2[] ="<?xml version=\"1.0\" encoding=\"UTF
                                     "<description>Production Unit</description>"
                                     "<dataType>String</dataType>"
                                     "<direction>TO_SF</direction>"
+                                    "<isOptional>false</isOptional>"
                                "</parameter>"
                                 "<parameter>"
                                     "<name>Mat</name>"
                                     "<description>Material number</description>"
                                     "<dataType>String</dataType>"
                                     "<direction>TO_SF</direction>"
+                                    "<isOptional>true</isOptional>"
                               "</parameter>"
                                 "<parameter>"
                                     "<name>Process</name>"
                                     "<description>Process description</description>"
                                     "<dataType>String</dataType>"
                                     "<direction>TO_SF</direction>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>BatchID</name>"
@@ -161,7 +167,7 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Set room label with 4 lines of free text</description>"
-                                "<supplierVersion>1.0</supplierVersion>"
+                                "<supplierVersion>1.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -181,6 +187,7 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>Line3</name>"
@@ -189,6 +196,7 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>Line4</name>"
@@ -197,6 +205,7 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                     "<direction>TO_SF</direction>"
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<attachment>"
                                 "</attachment>"
@@ -208,7 +217,7 @@ const char PROGMEM  RL_MDGetEnvironmentalData[] ="<?xml version=\"1.0\" encoding
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Receive tmp and rh</description>"
-                                "<supplierVersion>1.0</supplierVersion>"
+                                "<supplierVersion>1.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -255,7 +264,7 @@ const char PROGMEM  RL_MDGetEnvironmentalData2[] ="<?xml version=\"1.0\" encodin
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Receive tmp, rh and pressure</description>"
-                                "<supplierVersion>2.0</supplierVersion>"
+                                "<supplierVersion>2.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -307,7 +316,7 @@ const char PROGMEM  RL_MDRoomLabelOff[] ="<?xml version=\"1.0\" encoding=\"UTF-8
                                 "<supplierId>Werum</supplierId>"
                                 "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
                                 "<description>Switch off the room label</description>"
-                                "<supplierVersion>1.0</supplierVersion>"
+                                "<supplierVersion>1.1</supplierVersion>"
                                 "<systemId>"
                                 OP_SYSTEMID
                                 "</systemId>"
@@ -346,6 +355,7 @@ const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\
                                         "<toValue>100</toValue>"
                                     "</definitionRange>"
                                     "<uom>C</uom>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>RHUpperLimit</name>"
@@ -357,6 +367,7 @@ const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\
                                         "<toValue>100</toValue>"
                                     "</definitionRange>"
                                     "<uom>RH%</uom>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>TempLowerLimit</name>"
@@ -368,6 +379,7 @@ const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\
                                         "<toValue>100</toValue>"
                                     "</definitionRange>"
                                     "<uom>C</uom>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<parameter>"
                                     "<name>RHLowerLimit</name>"
@@ -381,6 +393,7 @@ const char PROGMEM  RL_MDSetExceptionLimits[] ="<?xml version=\"1.0\" encoding=\
                                         "<toValue>100</toValue>"
                                     "</definitionRange>"
                                     "<uom>RH%</uom>"
+                                    "<isOptional>true</isOptional>"
                                 "</parameter>"
                                 "<attachment>"
                                 "</attachment>"
@@ -408,7 +421,7 @@ const char PROGMEM  responseShowOrderInfo[] ="<?xml version=\"1.0\"\?>"
                                         "</messageId>"
                                         "<supplierId>Werum</supplierId>"
                                         "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
-                                        "<supplierVersion>1.0</supplierVersion>"
+                                        "<supplierVersion>1.1</supplierVersion>"
                                        // "<orderContext>5000761792</orderContext>"
                                         "<creationTime>" 
                                         OP_CREATIONTIME 
@@ -468,7 +481,7 @@ const char PROGMEM  responseShowOrderInfo2[] ="<?xml version=\"1.0\"\?>"
                                         "</messageId>"
                                         "<supplierId>Werum</supplierId>"
                                         "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
-                                        "<supplierVersion>2.0</supplierVersion>"
+                                        "<supplierVersion>2.1</supplierVersion>"
                                         //"<orderContext>5000761792</orderContext>"
                                         "<creationTime>" 
                                         OP_CREATIONTIME 
@@ -545,7 +558,7 @@ const char PROGMEM  responseGetEnvironmantalData[] ="<?xml version=\"1.0\"\?>"
                                         "</messageId>"
                                         "<supplierId>Werum</supplierId>"
                                         "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
-                                        "<supplierVersion>1.0</supplierVersion>"
+                                        "<supplierVersion>1.1</supplierVersion>"
                                         //"<orderContext>5000761792</orderContext>"
                                         "<creationTime>" 
                                         OP_CREATIONTIME 
@@ -611,7 +624,7 @@ const char PROGMEM  responseGetEnvironmantalData2[] ="<?xml version=\"1.0\"\?>"
                                         "</messageId>"
                                         "<supplierId>Werum</supplierId>"
                                         "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
-                                        "<supplierVersion>2.0</supplierVersion>"
+                                        "<supplierVersion>2.1</supplierVersion>"
                                         //"<orderContext>5000761792</orderContext>"
                                         "<creationTime>" 
                                         OP_CREATIONTIME 
@@ -808,18 +821,18 @@ class RoomLabel:public OrderParameterMessage
         {
           if (messageId == "ShowOrderInfo")
           {
-              ok =   getValue("BatchID")
-                  && getValue("Mat")
-                  && getValue("Process")
-                  && getValue("PU");
+              ok =   getValue("BatchID");
+                  //&& getValue("Mat")
+                  //&& getValue("Process")
+                  //&& getValue("PU");
 
           }
           else if (messageId == "ShowInfo")
           {
-              ok =   getValue("Line1")
-                  && getValue("Line2")
-                  && getValue("Line3")
-                  && getValue("Line4");
+              ok =   getValue("Line1");
+                  //&& getValue("Line2")
+                  //&& getValue("Line3")
+                  //&& getValue("Line4");
           }
           else if (messageId == "GetEnvironmentalData")
           {
@@ -831,10 +844,10 @@ class RoomLabel:public OrderParameterMessage
           }
           else if (messageId == "SetExceptionLimits")
           {
-              ok = getValue("TempUpperLimit")
-              &&   getValue("TempLowerLimit")
-              &&   getValue("RHUpperLimit")
-              &&   getValue("RHLowerLimit");
+              ok = getValue("TempUpperLimit") // at least one 
+              ||   getValue("TempLowerLimit")
+              ||   getValue("RHUpperLimit")
+              ||   getValue("RHLowerLimit");
           }
         }
         
@@ -896,7 +909,14 @@ class RoomLabel:public OrderParameterMessage
       String makeLCDLine(const char * v, const char* label)
       {
         String line;
-        line = String(String(label) + v).substring(0,lcdMaxChars);
+        if (v) // optional parameter
+        {
+          line = String(String(label) + v).substring(0,lcdMaxChars);
+        }
+        else
+        {
+          line = String(label).substring(0,lcdMaxChars);
+        }
         while (line.length()<lcdMaxChars)
         {
           line += " ";
@@ -909,11 +929,20 @@ class RoomLabel:public OrderParameterMessage
         String line;
         if (p)
         {
-          line = makeLCDLine(p->value.c_str(), label);
+          if (p->value.c_str())
+          {
+            line = makeLCDLine(p->value.c_str(), label);
+          }
+          else
+          {
+            line = makeLCDLine("", label);
+          }
         }
         else
         {
-          line = makeLCDLine("---", label);
+//          line = makeLCDLine("---", label);
+          line = makeLCDLine("", label);
+
         }
         return line;
       }
@@ -1006,6 +1035,12 @@ class RoomLabel:public OrderParameterMessage
 
         writeJsonFile(lcdFileName, json);
       }  
+
+      bool getEnabled()
+      {
+        return enabled;
+      }
+
 
       float tempUpperLimit;
       float tempLowerLimit;
