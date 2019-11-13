@@ -201,6 +201,11 @@ class OrderParameterMessage
           return getValueString(parameterName).toFloat();
         }
 
+        int getValueInt(const char * parameterName)
+        {
+          return getValueString(parameterName).toInt();
+        }
+
         void logToSerial(HardwareSerial & serial)
         {
           serial.print("messageId: ");

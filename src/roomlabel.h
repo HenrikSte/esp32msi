@@ -9,6 +9,7 @@ const char PROGMEM lcdFileName[]  = "/lcd.json";
 #define RL_TEMPERATURE         "{{Temperature}}"
 #define RL_HUMIDITY            "{{Humidity}}"
 #define RL_PRESSURE            "{{Pressure}}"
+#define RL_MESSAGENUMBER       "{{MessageNumber}}"
 
 
 
@@ -206,6 +207,61 @@ const char PROGMEM  RL_MDShowInfo[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
                                     "<isMesQualifier>false</isMesQualifier>"
                                     "<isSfQualifier>false</isSfQualifier>"
                                     "<isOptional>true</isOptional>"
+                                "</parameter>"
+                                "<attachment>"
+                                "</attachment>"
+                            "</MsiInterfaceDescription>";
+
+const char PROGMEM  RL_MDRequestBurst[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+                                "<messageId>BurstRequest</messageId>"
+                                "<supplierId>Werum</supplierId>"
+                                "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
+                                "<description>Request a number of identical messages to be sent from the device</description>"
+                                "<supplierVersion>1.1</supplierVersion>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
+                                "<creationTime>2018-05-03 13:05:00,000</creationTime>"
+                                "<parameter>"
+                                    "<name>NumberOfMessages</name>"
+                                    "<description>Number of messages requested</description>"
+                                    "<dataType>Long</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>BatchID</name>"
+                                    "<description>Batch ID</description>"
+                                    "<dataType>String</dataType>"
+                                    "<direction>TO_SF</direction>"
+                                "</parameter>"
+                                "<attachment>"
+                                "</attachment>"
+                            "</MsiInterfaceDescription>";
+
+const char PROGMEM  RL_MDBurstMessage[] ="<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                                "<MsiInterfaceDescription xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\">"
+                                "<messageId>BurstMessage</messageId>"
+                                "<supplierId>Werum</supplierId>"
+                                "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
+                                "<description>A dummy message</description>"
+                                "<supplierVersion>1.1</supplierVersion>"
+                                "<systemId>"
+                                OP_SYSTEMID
+                                "</systemId>"
+                                "<creationTime>2018-05-03 13:05:00,000</creationTime>"
+                                "<parameter>"
+                                    "<name>MessageNumber</name>"
+                                    "<description>Message Number</description>"
+                                    "<dataType>Long</dataType>"
+                                    "<direction>TO_MES</direction>"
+                                "</parameter>"
+                                "<parameter>"
+                                    "<name>BatchID</name>"
+                                    "<description>Batch ID</description>"
+                                    "<dataType>String</dataType>"
+                                    "<direction>TO_MES</direction>"
+                                    "<isMesQualifier>true</isMesQualifier>"
                                 "</parameter>"
                                 "<attachment>"
                                 "</attachment>"
@@ -536,6 +592,62 @@ const char PROGMEM  responseShowOrderInfo2[] ="<?xml version=\"1.0\"\?>"
                                 "</message>"
                             "</MsiMessageContainer>";
 
+
+const char PROGMEM  responseBurstMessage[] ="<?xml version=\"1.0\"\?>"
+                            "<MsiMessageContainer xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
+                            "<messageInstanceId>"
+                            OP_MESSAGEINSTANCEID1
+                            "</messageInstanceId>"
+                            "<direction>SF_TO_MES</direction>"
+                            "<systemId>"
+                            OP_SYSTEMID
+                            "</systemId>"
+                                "<messageType>MsiOrderParameterMessage</messageType>"
+                                //"<messageContext>5000761792</messageContext>"
+                                "<message>"
+                                    "<MsiOrderParameterMessage>"
+                                        "<messageInstanceId>"
+                                        OP_MESSAGEINSTANCEID2
+                                        "</messageInstanceId>"
+                                        "<direction>SF_TO_MES</direction>"
+                                        "<messageId>"
+                                        "BurstMessage"
+                                        "</messageId>"
+                                        "<supplierId>Werum</supplierId>"
+                                        "<deviceTypeId>ESP_Roomlabel</deviceTypeId>"
+                                        "<supplierVersion>1.1</supplierVersion>"
+                                        //"<orderContext>5000761792</orderContext>"
+                                        "<creationTime>" 
+                                        OP_CREATIONTIME 
+                                        "</creationTime>"
+                                        "<parameter>"
+                                            "<name>BatchID</name>"
+                                            "<dataType>String</dataType>"
+                                            "<value>"
+                                            RL_BATCHID
+                                            "</value>"
+                                            "<isQualifier>true</isQualifier>"
+                                            "<acquisitionTime>"
+                                            OP_CREATIONTIME
+                                            "</acquisitionTime>"
+                                        "</parameter>"    
+                                        "<parameter>"
+                                            "<name>MessageNumber</name>"
+                                            "<dataType>Long</dataType>"
+                                            "<value>"
+                                            RL_MESSAGENUMBER
+                                            "</value>"
+                                            "<isQualifier>false</isQualifier>"
+                                            "<acquisitionTime>"
+                                            OP_CREATIONTIME
+                                            "</acquisitionTime>"
+                                        "</parameter>"            
+                                        "<attachment>"
+                                        "</attachment>"
+                                    "</MsiOrderParameterMessage>"
+                                "</message>"
+                            "</MsiMessageContainer>";
+
 const char PROGMEM  responseGetEnvironmantalData[] ="<?xml version=\"1.0\"\?>"
                             "<MsiMessageContainer xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\">"
                             "<messageInstanceId>"
@@ -679,13 +791,13 @@ const char PROGMEM  responseGetEnvironmantalData2[] ="<?xml version=\"1.0\"\?>"
                                 "</message>"
                             "</MsiMessageContainer>";
 
-#define MESSAGEDESCRIPTIONCOUNT 5
+#define MESSAGEDESCRIPTIONCOUNT 7
 
-const char * messageDescriptionV1[]       = {RL_MDGetEnvironmentalData,    RL_MDShowOrderInfo,    RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits};
-const char * messageDescriptionV2[]       = {RL_MDGetEnvironmentalData2,   RL_MDShowOrderInfo2,   RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits};
-const char * messageDescriptionTextV1[] = { "GetEnvironmentalData (1.0)",  "ShowOrderInfo (1.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
-const char * messageDescriptionTextV2[] = { "GetEnvironmentalData (2.0)",  "ShowOrderInfo (2.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
-const char * messageDescriptionId[]     = { "GetEnvironmentalData",        "ShowOrderInfo",       "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits"};
+const char * messageDescriptionV1[]       = {RL_MDGetEnvironmentalData,    RL_MDShowOrderInfo,    RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits, RL_MDRequestBurst, RL_MDBurstMessage};
+const char * messageDescriptionV2[]       = {RL_MDGetEnvironmentalData2,   RL_MDShowOrderInfo2,   RL_MDRoomLabelOff,  RL_MDShowInfo,  RL_MDSetExceptionLimits, RL_MDRequestBurst, RL_MDBurstMessage};
+const char * messageDescriptionTextV1[] = { "GetEnvironmentalData (1.0)",  "ShowOrderInfo (1.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits", "BurstRequest", "BurstMessage"};
+const char * messageDescriptionTextV2[] = { "GetEnvironmentalData (2.0)",  "ShowOrderInfo (2.0)", "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits", "BurstRequest", "BurstMessage"};
+const char * messageDescriptionId[]     = { "GetEnvironmentalData",        "ShowOrderInfo",       "RoomLabelOff",     "ShowInfo",     "SetExceptionLimits", "BurstRequest", "BurstMessage"};
 
 class RoomLabel:public OrderParameterMessage
 {
@@ -809,6 +921,18 @@ class RoomLabel:public OrderParameterMessage
             rhLowerLimit   = getValueFloat("RHLowerLimit");
             writeLcdFile();
           }
+          else if (messageId == "BurstRequest")
+          {
+            setHasMessageToSend(true); 
+            numberOfMessages = getValueInt("NumberOfMessages");
+          }
+          else
+          {
+            Serial.print("MessageId unkonown:");
+            Serial.print(messageId);
+            Serial.print("\n");
+          }
+
         }
 
         return success;
@@ -838,6 +962,11 @@ class RoomLabel:public OrderParameterMessage
           {
               ok = getValue("BatchID");
           }
+          else if (messageId == "RequestBurst")
+          {
+              ok = getValue("BatchID")
+              &&   getValue("NumberOfMessages");
+          }
           else if (messageId == "RoomLabelOff")
           {
               ok = getValue("BatchID");
@@ -849,11 +978,31 @@ class RoomLabel:public OrderParameterMessage
               ||   getValue("RHUpperLimit")
               ||   getValue("RHLowerLimit");
           }
+          else
+          {
+            Serial.print("MessageId unkonown:");
+            Serial.print(messageId);
+            Serial.print("\n");
+            ok = false;
+          }
+
         }
         
         return ok;
       }
     
+
+      String getBurstMessageString(int number)
+      {
+        String nextMessageString = responseBurstMessage; 
+
+        OrderParameterMessage::getNextMessageString(nextMessageString);
+        String batchId = getValue("BatchID");
+        nextMessageString.replace(RL_BATCHID, batchId);
+        nextMessageString.replace(RL_MESSAGENUMBER, String(number));
+
+        return nextMessageString;
+      }
 
       String getNextMessageString (float tmp, 
                                   float hum,
@@ -1047,12 +1196,15 @@ class RoomLabel:public OrderParameterMessage
       float rhUpperLimit;
       float rhLowerLimit;
 
+      int numberOfMessages;
+
 
     protected:
       String nextMessageString;
       int version;
       int lcdMaxChars;
       bool enabled;
+
 
 
       String line1;

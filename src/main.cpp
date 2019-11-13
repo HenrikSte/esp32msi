@@ -975,25 +975,48 @@ bool processMessage(const String& content, String & errorMessage)
       //Serial.print(" is a RoomLabel message, success:");
       success = roomLabel.parseXml(content, errorMessage);
       mylog(success);
+      mylog(" MessageID:");
+      mylog(roomLabel.messageId);
       
       if (roomLabel.hasMessageToSend())
       {
-        //mylog(getNow());
-        
-        // we ignore the fact that pressure might be NAN, handled by room label 
-        String response = roomLabel.getNextMessageString(temperature, 
-                                                         humidity,
-                                                         pressure); 
+        mylog("hasMessage");
 
-        //Serial.print("QueueSize:");
-        //Serial.print(sendQueue.count());
+        if (roomLabel.messageId.equals("BurstRequest"))
+        {
+          int num = roomLabel.numberOfMessages;
+          mylog("\nSending burstmessages:\n");
 
-        //Serial.print("--push--");
-        sendQueue.push(response);
-        
-        //Serial.print("->QueueSize:");
-        //Serial.println(sendQueue.count());
+          for (int i =0; i<num; i++)
+          {
+            if (!sendQueue.isFull())
+            {
+              mylog(i);
+              mylog("\n");
+              String response = roomLabel.getBurstMessageString(i);
+              sendQueue.push(response);
+            }
+          }
+        }
+        else
+        {
 
+
+          // we ignore the fact that pressure might be NAN, handled by room label 
+          String response = roomLabel.getNextMessageString(temperature, 
+                                                          humidity,
+                                                          pressure); 
+
+          //Serial.print("QueueSize:");
+          //Serial.print(sendQueue.count());
+
+          //Serial.print("--push--");
+          sendQueue.push(response);
+          
+          //Serial.print("->QueueSize:");
+          //Serial.println(sendQueue.count());
+
+        }
         roomLabel.setHasMessageToSend(false);
         //Serial.print(getNow());
       }
@@ -1292,6 +1315,9 @@ void serverStart()
     
     if (!sendQueue.isEmpty())
     {
+      mylog("Messages in queue:");
+      mylog(sendQueue.count());
+      mylog("\n");
 /*
       Serial.print(getNow());
       Serial.print("QueueSize:");
@@ -1390,9 +1416,29 @@ void serverStart()
     Serial.println("ms");
   });
 
+
+  server.on("/burst", HTTP_GET, [](){
+    unsigned long start = millis();
+    mylog("burst:");
+    server.send(200, "text/html", getMainPage());  
+
+    if (myType == eRoomLabel)
+    {
+      //roomLabel.burst();
+    }
+
+    mylog(millis()-start);
+    mylog("ms\n");
+    
+  });
+
+
   server.onNotFound(notFound);
   server.begin();
 }
+
+
+
 
 void oledStart()
 {

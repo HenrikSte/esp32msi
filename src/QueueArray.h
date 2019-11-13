@@ -59,7 +59,7 @@
 // include Arduino basic header.
 #include <Arduino.h>
 
-#define QUEUESIZE 20
+#define QUEUESIZE 200
 
 // the definition of the queue class.
 template<typename T>
