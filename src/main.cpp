@@ -27,6 +27,7 @@
 #include "AnalogPHMeter.h"
 #include "roomlabel.h"
 #include "ph.h"
+#include "photometer.h"
 #include "exceptionmessage.h"
 #include "QueueArray.h"
 
@@ -97,9 +98,8 @@ QueueArray<String> sendQueue;
 
 
 RoomLabel roomLabel(LCDMAXCHARS);
-
 PHMeter   pHMeter;
-
+PhotoMeter photoMeter;
 
 //works for my SSD1306 as well!
 U8G2_SH1106_128X64_NONAME_F_HW_I2C * displayOled;
@@ -120,7 +120,7 @@ bool OledExists  = false;
 enum eTypeOfDevice {eUnknown, 
                     eRoomLabel,
                     epH,
-                    eScale};
+                    ePhotoMeter};
 
 eTypeOfDevice myType = eUnknown;
 
@@ -484,6 +484,16 @@ String getMainPage()
       links += link;
     }
   }
+  else if (myType==ePhotoMeter)
+  {
+    for (int i=0; i<photoMeter.getMessageDescriptionCount(); i++)
+    {
+      String link = descriptionLink;
+      link.replace(MESSAGEURI, String("/")+photoMeter.getMessageDescriptionId(i));
+      link.replace(MESSAGENAME, photoMeter.getMessageDescriptionText(i));
+      links += link;
+    }
+  }
   page.replace(LINKS, links);
 
   return page;
@@ -563,6 +573,25 @@ void notFound()
         {
           foundValidURI = true;
           messageDescription = pHMeter.getMessageDescription(i);
+          messageDescription.replace(OP_SYSTEMID,systemId);
+
+          server.send(200, "text/xml", messageDescription.c_str());
+        }
+      }
+    }
+  }
+  else if (myType == ePhotoMeter)
+  {
+    if (!foundValidURI)
+    {
+      systemId="PM_" OP_SYSTEMID "_System"; 
+      systemId.replace(OP_SYSTEMID,String(WiFi.localIP()[3]));
+      for (int i=0; i<photoMeter.getMessageDescriptionCount(); i++)
+      {
+        if (String(String("/")+photoMeter.getMessageDescriptionId(i)).equals(server.uri()))
+        {
+          foundValidURI = true;
+          messageDescription = photoMeter.getMessageDescription(i);
           messageDescription.replace(OP_SYSTEMID,systemId);
 
           server.send(200, "text/xml", messageDescription.c_str());
@@ -735,7 +764,10 @@ static void displayOledScreen(const char * SSID = NULL, const char * IP=NULL, co
         int val = adc1_get_raw(ADC1_CHANNEL_0);
         displayOled->drawStr( 0, 40, String(val).c_str());
       }
-
+      else if (myType== ePhotoMeter)
+      {
+        // #todo
+      }
       displayOled->drawStr(  0, 50, getNow().c_str());  
 
     }
@@ -773,7 +805,11 @@ static void displayOledScreen(const char * SSID = NULL, const char * IP=NULL, co
       displayOled->setFont(font30);
       displayOled->drawStr( 35, 9, pHMeter.getpHString().c_str());
     }
-    
+    else if (myType== ePhotoMeter)
+    {
+      // #todo
+    }
+  
     displayOled->sendBuffer();
 
   }
